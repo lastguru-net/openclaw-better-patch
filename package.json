@@ -1,0 +1,53 @@
+{
+  "name": "@lastguru-net/openclaw-better-patch",
+  "version": "0.1.0",
+  "description": "Codex-style patch editing for OpenClaw, without a Codex dependency",
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "Dmitry Golubev <lastguru@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lastguru-net/openclaw-better-patch.git"
+  },
+  "engines": {
+    "node": ">=22.22.3"
+  },
+  "files": [
+    "dist",
+    "openclaw.plugin.json",
+    "LICENSE",
+    "NOTICE",
+    "README.md"
+  ],
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "compat": {
+      "pluginApi": ">=2026.9.2"
+    },
+    "install": {
+      "minHostVersion": ">=2026.9.2"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsx --test test/*.test.ts",
+    "check": "npm run build && npm test",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "openclaw": "2026.9.2",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.9.2"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  }
+}

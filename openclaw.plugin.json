@@ -1,0 +1,9 @@
+{
+  "id": "better-patch",
+  "name": "Better Patch",
+  "version": "0.1.0",
+  "description": "Codex-style patch editing without a Codex dependency",
+  "activation": { "onStartup": false },
+  "contracts": { "tools": ["better_patch"] },
+  "configSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+}

@@ -1,0 +1,3 @@
+** text eol=lf
+# Patch fixtures intentionally exercise whitespace-padded markers.
+test/fixtures/** -whitespace
