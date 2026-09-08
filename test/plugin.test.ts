@@ -26,8 +26,9 @@ test('registers a per-session factory and edits the workspace through the tool c
   await assert.rejects(readFile(join(root, 'aborted')), { code: 'ENOENT' });
 });
 
-test('does not expose a host-writing tool to sandboxed or workspace-less sessions', () => {
-  assert.equal(createBetterPatchTool({ sandboxed: true, workspaceDir: '/tmp' }), null);
+test('sandbox sessions never fall back to host writes; workspace-less sessions have no tool', async () => {
+  const tool = createBetterPatchTool({ sandboxed: true, workspaceDir: '/tmp' })!;
+  await assert.rejects(tool.execute('unavailable', { input: add('forbidden') }), /host fallback is forbidden/);
   assert.equal(createBetterPatchTool({}), null);
 });
 
@@ -63,4 +64,16 @@ test('effective policy root can be narrower than workspace; unrestricted session
   const free = createBetterPatchTool({ workspaceDir: allowed, fsPolicy: { workspaceOnly: false } })!;
   await free.execute('absolute', { input: add(join(root, 'absolute')) });
   assert.equal(await readFile(join(root, 'absolute'), 'utf8'), 'hello\n');
+});
+
+test('sandbox resolution rejects remote placements and stale session identities before provisioning', async () => {
+  const { sandboxResolver } = await import('../src/sandbox.js');
+  const ctx = { sandboxed: true, sessionKey: 'agent:main:test', sessionId: 'current', workspaceDir: '/tmp', config: {} };
+  for (const session of [null, { sessionId: 'stale' }, { sessionId: 'current', placement: { state: 'active' } }]) {
+    const resolver = sandboxResolver({ runtime: { gateway: {
+      isAvailable: async () => true,
+      request: async () => ({ session }),
+    } } } as any);
+    await assert.rejects(resolver(ctx), /identity|Worker placement/);
+  }
 });

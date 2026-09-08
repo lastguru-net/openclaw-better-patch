@@ -1,7 +1,8 @@
 import type { AnyAgentTool, OpenClawPluginDefinition, OpenClawPluginToolContext } from "openclaw/plugin-sdk/plugin-entry";
 import { lstat, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
-import { applyVerifiedPatch } from "./patch.js";
+import { applyVerifiedPatch, hostFileSystem } from "./patch.js";
+import { assertSandboxRoot, sandboxFileSystem, sandboxResolver, type SandboxResolver } from "./sandbox.js";
 
 function inside(root: string, path: string): boolean {
   const rel = relative(root, path);
@@ -31,11 +32,11 @@ async function assertWithinRoot(root: string, path: string): Promise<void> {
   }
 }
 
-export function createBetterPatchTool(ctx: OpenClawPluginToolContext): AnyAgentTool | null {
-  // Plugin tools run on the host. Stable OpenClaw exposes no sandbox fs bridge here.
-  if (ctx.sandboxed || !ctx.workspaceDir) return null;
+export function createBetterPatchTool(ctx: OpenClawPluginToolContext, resolveSandbox?: SandboxResolver): AnyAgentTool | null {
+  if (!ctx.workspaceDir) return null;
   const cwd = resolve(ctx.workspaceDir);
   const root = ctx.fsPolicy?.workspaceOnly ? resolve(ctx.fsPolicy.root ?? cwd) : undefined;
+  let sandboxPromise: ReturnType<SandboxResolver> | undefined;
   return {
     name: "better_patch",
     label: "Better Patch",
@@ -48,11 +49,21 @@ export function createBetterPatchTool(ctx: OpenClawPluginToolContext): AnyAgentT
     },
     async execute(_id, params: { input: string }, signal) {
       if (typeof params?.input !== "string") throw new Error("better_patch requires a string input");
+      signal?.throwIfAborted();
+      const sandbox = ctx.sandboxed && resolveSandbox
+        ? await (sandboxPromise ??= resolveSandbox(ctx).catch(error => { sandboxPromise = undefined; throw error; }))
+        : undefined;
+      if (ctx.sandboxed && !sandbox?.fsBridge) throw new Error("The session sandbox filesystem is unavailable; host fallback is forbidden");
+      if (sandbox?.workspaceAccess === "ro") throw new Error("Sandbox workspace is read-only");
+      const fs = sandbox ? sandboxFileSystem(sandbox, signal) : hostFileSystem;
+      const workdir = sandbox?.workspaceDir ?? cwd;
+      const sandboxRoot = sandbox && root ? fs.resolve(workdir, ctx.fsPolicy?.root ?? sandbox.workspaceDir) : undefined;
       const checkPath = async (path: string) => {
         signal?.throwIfAborted();
-        if (root) await assertWithinRoot(root, path);
+        if (sandboxRoot) assertSandboxRoot(sandboxRoot, path);
+        else if (!sandbox && root) await assertWithinRoot(root, path);
       };
-      const result = await applyVerifiedPatch(params.input, cwd, checkPath);
+      const result = await applyVerifiedPatch(params.input, workdir, checkPath, fs);
       return { content: [{ type: "text", text: result.text }],
         details: { added: result.added, modified: result.modified, deleted: result.deleted } };
     },
@@ -65,6 +76,6 @@ export default {
   description: "Codex-style patch editing without a Codex dependency",
   version: "0.1.0",
   register(api) {
-    api.registerTool(createBetterPatchTool, { name: "better_patch" });
+    api.registerTool(ctx => createBetterPatchTool(ctx, sandboxResolver(api)), { name: "better_patch" });
   },
 } satisfies OpenClawPluginDefinition;

@@ -88,15 +88,24 @@ Important inherited behavior:
 OpenClaw-specific adaptation:
 
 - Patch text is a JSON `input` string rather than a freeform tool argument.
-- Relative paths use the agent workspace, not the Gateway process directory.
+- Relative paths use the agent workspace (the sandbox workspace in sandboxed runs), not the Gateway process directory.
   Absolute paths and paths outside it are allowed only when OpenClaw's effective
   filesystem policy does not require workspace-only access.
 - Workspace-only policy checks both path spelling and resolved existing ancestors,
   including move destinations. Like ordinary path-based filesystem operations,
   these checks are not an OS sandbox against concurrent hostile filesystem changes.
-- Sandboxed sessions do not receive this tool: OpenClaw's stable public plugin
-  context does not expose a sandbox filesystem bridge. Sessions without a known
-  workspace also do not receive it. Host files are never used as a sandbox fallback.
+- Configured sandboxes use the public `resolveSandboxContext` SDK and its filesystem
+  bridge, including the session's stored skill selections. The context is resolved
+  lazily once per tool instance; reads, writes, and deletes use the bridge, not host
+  filesystem calls. Read-only workspaces reject writes. Missing sandbox context
+  is an error, never permission to fall back to host files.
+- Remote-worker placements are distinct from configured sandboxes: OpenClaw injects
+  their exact runtime-owned bridge separately and does not expose it to plugin tools.
+  The plugin checks placement through `sessions.describe` when running in a Gateway
+  and rejects non-local placements rather than reconstructing the wrong filesystem.
+  Full replacement support for those placements still needs a host API that passes
+  the active filesystem capability into plugin tools.
+- Sessions without a known workspace do not receive the tool.
 - Codex `*** Environment ID:` routing is rejected. Shell wrappers are not executed;
   only the upstream literal `<<EOF` patch wrapper tolerance is supported.
 - OS error details use Node.js messages, not Rust's exact wording. Codex approval
@@ -113,6 +122,20 @@ npm run check
 Tests include adapted upstream filesystem scenarios plus matching, parser,
 preflight, and OpenClaw adapter behavior. OpenClaw 2026.9.2 is pinned as a development
 dependency for SDK type checking; it is not bundled into the plugin.
+
+### Docker integration test
+
+With Docker access and `python:3.12-slim` available locally:
+
+```sh
+node --import tsx --test test/sandbox.integration.ts
+```
+
+This opt-in test uses temporary OpenClaw state and disposable Docker containers;
+no Gateway is started. It verifies existing-container reuse, add/update/move/delete,
+path and symlink boundaries, isolated host-file preservation, and read-only policy.
+The normal test suite does not require Docker. Other configured sandbox backends
+use the same bridge interface but have not been integration-tested here.
 
 ## License
 
