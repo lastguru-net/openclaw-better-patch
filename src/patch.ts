@@ -1,6 +1,5 @@
 // Adapted from OpenAI Codex rust-v0.153.4 (Apache-2.0). See NOTICE.
-import { mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import type { PatchFileSystem } from "./filesystem.js";
 import { parsePatch, trim, trimEnd, type Chunk } from "./parser.js";
 
 const normalize = (s: string): string => trim(s)
@@ -59,46 +58,19 @@ function update(contents: string, chunks: Chunk[], path: string): string {
   return result.join("\n");
 }
 
-async function writeWithParents(path: string, contents: string): Promise<void> {
-  try { await writeFile(path, contents); }
-  catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, contents);
-  }
-}
-
 export type PatchResult = { text: string; added: string[]; modified: string[]; deleted: string[] };
-
-/** The patch algorithm operates on either host files or an OpenClaw sandbox bridge. */
-export interface PatchFileSystem {
-  resolve(cwd: string, path: string): string;
-  read(path: string): Promise<Uint8Array>;
-  write(path: string, contents: string, createParents: boolean): Promise<void>;
-  remove(path: string): Promise<void>;
-}
-
-export const hostFileSystem: PatchFileSystem = {
-  resolve,
-  read: readFile,
-  write: (path, contents, createParents) => createParents ? writeWithParents(path, contents) : writeFile(path, contents),
-  async remove(path) {
-    if ((await stat(path)).isDirectory()) throw new Error(`path is a directory: ${path}`);
-    await unlink(path);
-  },
-};
 
 async function readText(path: string, fs: PatchFileSystem): Promise<string> {
   return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(await fs.read(path));
 }
 
 /** Native-tool correctness checks, without Codex's approval/executor machinery. */
-export async function applyVerifiedPatch(patch: string, cwd: string, checkPath?: (path: string) => Promise<void>, fs: PatchFileSystem = hostFileSystem): Promise<PatchResult> {
+export async function applyVerifiedPatch(patch: string, cwd: string, fs: PatchFileSystem): Promise<PatchResult> {
   const seen = new Set<string>();
   for (const hunk of parsePatch(patch)) {
     const path = fs.resolve(cwd, hunk.path);
-    await checkPath?.(path);
-    if (hunk.kind === "update" && hunk.move !== undefined) await checkPath?.(fs.resolve(cwd, hunk.move));
+    await fs.checkPath(path);
+    if (hunk.kind === "update" && hunk.move !== undefined) await fs.checkPath(fs.resolve(cwd, hunk.move));
     if (seen.has(path)) throw new Error(`Invalid patch: multiple operations target ${path}`);
     seen.add(path);
     if (hunk.kind !== "add") {
@@ -108,17 +80,17 @@ export async function applyVerifiedPatch(patch: string, cwd: string, checkPath?:
       if (hunk.kind === "update") update(contents, hunk.chunks, path);
     }
   }
-  return applyPatch(patch, cwd, checkPath, fs);
+  return applyPatch(patch, cwd, fs);
 }
 
 /** Apply sequentially, like the upstream standalone engine. Failures do not roll back earlier files. */
-export async function applyPatch(patch: string, cwd: string, checkPath?: (path: string) => Promise<void>, fs: PatchFileSystem = hostFileSystem): Promise<PatchResult> {
+export async function applyPatch(patch: string, cwd: string, fs: PatchFileSystem): Promise<PatchResult> {
   const hunks = parsePatch(patch);
   if (!hunks.length) throw new Error("No files were modified.");
   const result: PatchResult = { text: "", added: [], modified: [], deleted: [] };
   for (const hunk of hunks) {
     const path = fs.resolve(cwd, hunk.path);
-    await checkPath?.(path);
+    await fs.checkPath(path);
     if (hunk.kind === "add") {
       await fs.write(path, hunk.contents, true);
       result.added.push(hunk.path);
@@ -135,13 +107,13 @@ export async function applyPatch(patch: string, cwd: string, checkPath?: (path: 
       }
       const updated = update(contents, hunk.chunks, path);
       if (hunk.move !== undefined) {
-        await checkPath?.(fs.resolve(cwd, hunk.move));
+        await fs.checkPath(fs.resolve(cwd, hunk.move));
         await fs.write(fs.resolve(cwd, hunk.move), updated, true);
-        await checkPath?.(path);
+        await fs.checkPath(path);
         await fs.remove(path);
         result.modified.push(hunk.move);
       } else {
-        await checkPath?.(path);
+        await fs.checkPath(path);
         await fs.write(path, updated, false);
         result.modified.push(hunk.path);
       }

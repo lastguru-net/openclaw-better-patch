@@ -1,7 +1,7 @@
 import { posix } from "node:path";
 import type { OpenClawPluginApi, OpenClawPluginToolContext } from "openclaw/plugin-sdk/plugin-entry";
 import type { resolveSandboxContext } from "openclaw/plugin-sdk/agent-harness-runtime";
-import type { PatchFileSystem } from "./patch.js";
+import type { PatchFileSystem } from "./filesystem.js";
 
 type Sandbox = NonNullable<Awaited<ReturnType<typeof resolveSandboxContext>>>;
 export type SandboxResolver = (ctx: OpenClawPluginToolContext) => Promise<Sandbox | null>;
@@ -33,15 +33,21 @@ export function sandboxResolver(api: OpenClawPluginApi): SandboxResolver {
   };
 }
 
-export function sandboxFileSystem(sandbox: Sandbox, signal?: AbortSignal): PatchFileSystem {
+export function sandboxFileSystem(sandbox: Sandbox, signal?: AbortSignal, allowedRoot?: string): PatchFileSystem {
   const bridge = sandbox.fsBridge;
   if (!bridge) throw new Error("Sandbox filesystem bridge is unavailable");
+  const root = allowedRoot === undefined ? undefined
+    : bridge.resolvePath({ filePath: allowedRoot, cwd: sandbox.workspaceDir }).containerPath;
   const writable = () => {
     signal?.throwIfAborted();
     if (sandbox.workspaceAccess === "ro") throw new Error("Sandbox workspace is read-only");
   };
   return {
     resolve: (cwd, path) => bridge.resolvePath({ filePath: path, cwd }).containerPath,
+    async checkPath(path) {
+      signal?.throwIfAborted();
+      if (root) assertSandboxRoot(root, path);
+    },
     read: path => bridge.readFile({ filePath: path, signal }),
     async write(path, contents, createParents) {
       writable();

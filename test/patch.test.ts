@@ -5,7 +5,12 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { applyPatch, applyVerifiedPatch, type PatchResult } from "../src/patch.js";
+import { applyPatch as apply, applyVerifiedPatch as verify, type PatchResult } from "../src/patch.js";
+
+import { hostFileSystem } from "../src/host.js";
+
+const applyPatch = async (patch: string, cwd: string) => apply(patch, cwd, await hostFileSystem(cwd));
+const applyVerifiedPatch = async (patch: string, cwd: string) => verify(patch, cwd, await hostFileSystem(cwd));
 
 const fixtures = fileURLToPath(new URL("fixtures", import.meta.url));
 const rejectFixtures = new Set([

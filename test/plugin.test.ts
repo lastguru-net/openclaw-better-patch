@@ -40,16 +40,16 @@ test('workspace-only policy rejects traversal, absolute escapes, symlink escapes
   await mkdir(root); await mkdir(outside);
   const tool = createBetterPatchTool({ workspaceDir: root, fsPolicy: { workspaceOnly: true, root } })!;
   for (const path of ['../escaped', join(outside, 'escaped')]) {
-    await assert.rejects(tool.execute('escape', { input: add(path) }), /outside the workspace/);
+    await assert.rejects(tool.execute('escape', { input: add(path) }), { code: "outside-workspace" });
   }
   if (process.platform !== 'win32') {
     await symlink(outside, join(root, 'link'));
-    await assert.rejects(tool.execute('link', { input: add('link/escaped') }), /outside the workspace/);
+    await assert.rejects(tool.execute('link', { input: add('link/escaped') }), { code: "outside-workspace" });
     await symlink(join(outside, 'missing'), join(root, 'dangling'));
-    await assert.rejects(tool.execute('dangling', { input: add('dangling/escaped') }), /Unresolvable symlink/);
+    await assert.rejects(tool.execute('dangling', { input: add('dangling/escaped') }), { code: "outside-workspace" });
   }
   await tool.execute('source', { input: add('source') });
-  await assert.rejects(tool.execute('move', { input: '*** Begin Patch\n*** Update File: source\n*** Move to: ../outside/moved\n@@\n-hello\n+bye\n*** End Patch' }), /outside the workspace/);
+  await assert.rejects(tool.execute('move', { input: '*** Begin Patch\n*** Update File: source\n*** Move to: ../outside/moved\n@@\n-hello\n+bye\n*** End Patch' }), { code: "outside-workspace" });
   assert.equal(await readFile(join(root, 'source'), 'utf8'), 'hello\n');
   await assert.rejects(readFile(join(outside, 'escaped')), { code: 'ENOENT' });
 });
@@ -59,7 +59,7 @@ test('effective policy root can be narrower than workspace; unrestricted session
   t.after(() => rm(root, { recursive: true, force: true }));
   const allowed = join(root, 'allowed'); await mkdir(allowed);
   const restricted = createBetterPatchTool({ workspaceDir: root, fsPolicy: { workspaceOnly: true, root: allowed } })!;
-  await assert.rejects(restricted.execute('bad', { input: add('not-allowed') }), /outside the workspace/);
+  await assert.rejects(restricted.execute('bad', { input: add('not-allowed') }), { code: "outside-workspace" });
   await restricted.execute('ok', { input: add('allowed/file') });
   const free = createBetterPatchTool({ workspaceDir: allowed, fsPolicy: { workspaceOnly: false } })!;
   await free.execute('absolute', { input: add(join(root, 'absolute')) });

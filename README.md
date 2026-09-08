@@ -112,6 +112,34 @@ OpenClaw-specific adaptation:
   prompts, execution metadata, diffs for its UI, and filesystem change events are
   not reproduced.
 
+## Host filesystem behavior
+
+Host access uses OpenClaw's public `file-access-runtime` guarded root API.
+Unrestricted Linux sessions use `/` as the root; workspace-only sessions use
+OpenClaw's effective allowed root. Relative patch paths still use the agent
+workspace. The root does not grant additional OS permissions.
+
+- Host reads are capped at **64 MiB per file**, raised from the library's 16 MiB
+  default. This is the existing file's size, not the patch request's size. It is
+  a plugin code setting, not a global OpenClaw configuration setting. Sandbox
+  reads retain their backend's behavior.
+- File content access is for regular files, not FIFOs, sockets, or unsafe
+  device/process-descriptor paths. Directory deletion remains unsupported.
+- The library's portable destination checks can reject legal POSIX names such
+  as a leading `C:name.txt`. This is not a general ban on colons in filenames.
+- Host writes use atomic replacement for each file, not a transaction across
+  the patch. Adds still overwrite existing files. New files use the library's
+  `0600` default; replacement normally preserves existing permission bits.
+  Other metadata and inode identity are not preserved as with in-place writes.
+- Symlink reads follow targets within the allowed root. **Deferred behavior:**
+  replacement of a file symlink replaces the link itself rather than editing
+  its target; directory symlinks can be followed within the root. Files with
+  multiple hardlinks are rejected by the library's default read/write guards.
+  No custom link-handling workaround is applied in this version.
+- The library's default identity checks remain enabled. Filesystem-specific
+  compatibility changes are deferred. A post-publication verification error
+  does not guarantee that the replacement was rolled back.
+
 ## Development
 
 ```sh
@@ -122,6 +150,13 @@ npm run check
 Tests include adapted upstream filesystem scenarios plus matching, parser,
 preflight, and OpenClaw adapter behavior. OpenClaw 2026.9.2 is pinned as a development
 dependency for SDK type checking; it is not bundled into the plugin.
+`@openclaw/fs-safe` 0.8.1 is a development-only type dependency because OpenClaw
+2026.9.2 exports `file-access-runtime` without declarations. Runtime imports
+still go through OpenClaw, not directly through that dependency.
+
+`src/filesystem.ts` defines the shared `PatchFileSystem` connector, implemented
+by `src/host.ts` and `src/sandbox.ts`. The patch engine receives that connector
+explicitly and performs no direct host I/O or sandbox resolution.
 
 ### Docker integration test
 
@@ -130,6 +165,10 @@ With Docker access and `python:3.12-slim` available locally:
 ```sh
 node --import tsx --test test/sandbox.integration.ts
 ```
+
+With rootful Docker, run the test with sufficient privileges (for example,
+`sudo node --import tsx --test test/sandbox.integration.ts`) to clean up
+root-owned files created by sandbox provisioning.
 
 This opt-in test uses temporary OpenClaw state and disposable Docker containers;
 no Gateway is started. It verifies existing-container reuse, add/update/move/delete,
