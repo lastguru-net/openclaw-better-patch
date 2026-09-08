@@ -27,9 +27,11 @@ export async function hostFileSystem(cwd: string, allowedRoot?: string, signal?:
     },
     async remove(path) {
       check();
-      // Root.remove also supports empty directories; patch deletion does not.
-      if ((await files.stat(rel(path))).isDirectory) throw new Error(`path is a directory: ${path}`);
-      await files.remove(rel(path));
+      try { await files.remove(rel(path)); }
+      catch (error) {
+        const code = (error as { code?: string }).code;
+        if (code !== "not-found" && code !== "ENOENT") throw error;
+      }
     },
   };
 }

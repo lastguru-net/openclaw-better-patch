@@ -5,5 +5,6 @@ export interface PatchFileSystem {
   checkPath(path: string): Promise<void>;
   read(path: string): Promise<Uint8Array>;
   write(path: string, contents: string, createParents: boolean): Promise<void>;
+  /** Remove a file or empty directory; missing paths succeed. Never recursive. */
   remove(path: string): Promise<void>;
 }

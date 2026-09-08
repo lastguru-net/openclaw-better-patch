@@ -12,7 +12,7 @@ export function createBetterPatchTool(ctx: OpenClawPluginToolContext, resolveSan
   return {
     name: "better_patch",
     label: "Better Patch",
-    description: "Apply a patch to UTF-8 files. Use *** Begin Patch and *** End Patch, with *** Add File: path (lines prefixed +), *** Delete File: path, or *** Update File: path. Updates accept optional *** Move to: path, @@ or @@ context anchors, and lines prefixed space (context), - (remove), + (add). *** End of File anchors a chunk at EOF. Paths are relative to the agent workspace unless absolute. Context matching tolerates whitespace and common Unicode punctuation. Send patch text in the input field, not a shell command. Changes are not transactional; I/O failures can leave partial edits.",
+    description: "Apply a patch to files. Update contents must be valid UTF-8. Deletion accepts binary files and empty directories; missing paths succeed, and non-empty directories are not removed. Use *** Begin Patch and *** End Patch, with *** Add File: path (lines prefixed +), *** Delete File: path, or *** Update File: path. Updates accept optional *** Move to: path, @@ or @@ context anchors, and lines prefixed space (context), - (remove), + (add). *** End of File anchors a chunk at EOF. Paths are relative to the agent workspace unless absolute. Context matching tolerates whitespace and common Unicode punctuation. Send patch text in the input field, not a shell command. Changes are not transactional; I/O failures can leave partial edits.",
     parameters: {
       type: "object",
       properties: { input: { type: "string", description: "Complete patch text, including Begin/End Patch markers." } },

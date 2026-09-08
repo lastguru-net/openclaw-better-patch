@@ -51,7 +51,8 @@ Patch syntax supports multiple files, adds, deletes, updates, and moves:
 ```
 
 - Add files with `*** Add File: path` and `+`-prefixed lines.
-- Delete with `*** Delete File: path`.
+- Delete a file or empty directory with `*** Delete File: path`. Missing paths
+  succeed; non-empty directories are not removed.
 - Update with `*** Update File: path`, optionally followed by `*** Move to: path`.
 - Prefix update lines with a space for context, `-` for removal, or `+` for addition.
 - Separate chunks with `@@`; use `@@ context text` to locate a later section.
@@ -69,16 +70,18 @@ The parser, matching order, default file-update algorithm, preflight validation,
 and summary format are adapted into TypeScript. There is no streaming parser or
 Codex-specific execution/approval/environment machinery.
 
-Important inherited behavior:
+Patch behavior:
 
 - Match exact lines first, then tolerate trailing whitespace, surrounding
   whitespace, and common Unicode punctuation differences.
 - Adds and move destinations can overwrite existing files; missing parent
-  directories are created. Deletes require an existing file.
-- Validate all update/delete sources and reject repeated source paths before
-  editing. A later I/O failure can still leave earlier changes; patches are **not
-  transactional** and no rollback is attempted.
-- Files being read must be valid UTF-8. Adds may overwrite arbitrary bytes.
+  directories are created.
+- Validate update contents and all operation paths, and reject repeated source
+  paths before editing. A later I/O failure can still leave earlier changes;
+  patches are **not transactional** and no rollback is attempted.
+- Update sources must be valid UTF-8. Adds may overwrite arbitrary bytes.
+- Deletion does not read or decode contents, so binary files can be removed.
+  Successful deletions, including missing-path no-ops, are reported with `D`.
 - Default Codex newline behavior is retained, including appending a trailing
   newline on updates and replacing matched context with patch text. Untouched
   CRLF lines can retain their CR while changed lines use LF. This is not a
@@ -123,7 +126,8 @@ workspace. The root does not grant additional OS permissions.
   disables the library's default cap). The engine still reads complete files
   into memory. Sandbox reads retain their backend's behavior.
 - File content access is for regular files, not FIFOs, sockets, or unsafe
-  device/process-descriptor paths. Directory deletion remains unsupported.
+  device/process-descriptor paths. Deletion accepts files and empty directories
+  without reading their contents.
 - The library's portable destination checks can reject legal POSIX names such
   as a leading `C:name.txt`. This is not a general ban on colons in filenames.
 - Host writes use atomic replacement for each file, not a transaction across
@@ -169,7 +173,9 @@ root-owned files created by sandbox provisioning.
 
 This opt-in test uses temporary OpenClaw state and disposable Docker containers;
 no Gateway is started. It verifies existing-container reuse, add/update/move/delete,
-path and symlink boundaries, isolated host-file preservation, and read-only policy.
+binary-file and empty-directory deletion, missing-path no-ops, non-empty-directory
+rejection, path and symlink boundaries, isolated host-file preservation, and
+read-only policy.
 The normal test suite does not require Docker. Other configured sandbox backends
 use the same bridge interface but have not been integration-tested here.
 

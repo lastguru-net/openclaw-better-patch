@@ -55,9 +55,22 @@ export function sandboxFileSystem(sandbox: Sandbox, signal?: AbortSignal, allowe
     },
     async remove(path) {
       writable();
-      const info = await bridge.stat({ filePath: path, signal });
-      if (info?.type === "directory") throw new Error(`path is a directory: ${path}`);
-      await bridge.remove({ filePath: path, recursive: false, force: false, signal });
+      try { await bridge.remove({ filePath: path, recursive: false, force: true, signal }); }
+      catch (error) {
+        signal?.throwIfAborted();
+        // Some bridges cannot remove or stat a path with missing parents.
+        // Walk upward only on stat errors; a confirmed missing ancestor is
+        // sufficient, but an existing entry or no confirmation preserves error.
+        for (let probe = path; ;) {
+          signal?.throwIfAborted();
+          const info = await bridge.stat({ filePath: probe, signal }).catch(() => undefined);
+          if (info === null) return;
+          if (info !== undefined) throw error;
+          const parent = posix.dirname(probe);
+          if (parent === probe) throw error;
+          probe = parent;
+        }
+      }
     },
   };
 }

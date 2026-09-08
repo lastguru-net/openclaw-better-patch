@@ -73,11 +73,11 @@ export async function applyVerifiedPatch(patch: string, cwd: string, fs: PatchFi
     if (hunk.kind === "update" && hunk.move !== undefined) await fs.checkPath(fs.resolve(cwd, hunk.move));
     if (seen.has(path)) throw new Error(`Invalid patch: multiple operations target ${path}`);
     seen.add(path);
-    if (hunk.kind !== "add") {
+    if (hunk.kind === "update") {
       let contents: string;
       try { contents = await readText(path, fs); }
       catch (error) { throw new Error(`Failed to read ${path}: ${(error as Error).message}`, { cause: error }); }
-      if (hunk.kind === "update") update(contents, hunk.chunks, path);
+      update(contents, hunk.chunks, path);
     }
   }
   return applyPatch(patch, cwd, fs);
@@ -96,7 +96,7 @@ export async function applyPatch(patch: string, cwd: string, fs: PatchFileSystem
       result.added.push(hunk.path);
     } else if (hunk.kind === "delete") {
       try { await fs.remove(path); }
-      catch (error) { throw new Error(`Failed to delete file ${path}: ${(error as Error).message}`, { cause: error }); }
+      catch (error) { throw new Error(`Failed to delete path ${path}: ${(error as Error).message}`, { cause: error }); }
       result.deleted.push(hunk.path);
     } else {
       let contents: string;

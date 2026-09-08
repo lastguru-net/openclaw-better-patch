@@ -41,6 +41,17 @@ test('stable SDK uses the existing Docker sandbox for patch operations and enfor
   await assert.rejects(tool.execute('symlink', { input: wrap('*** Add File: link/escape\n+bad') }), /outside|escape|symlink|workspace/i);
   await tool.execute('delete', { input: wrap('*** Delete File: moved/file') });
   await assert.rejects(readFile(join(workspace, 'moved/file')), { code: 'ENOENT' });
+  await active.fsBridge.writeFile({ filePath: `${active.containerWorkdir}/binary`, data: Buffer.from([0xff, 0xfe]) });
+  await active.fsBridge.mkdirp({ filePath: `${active.containerWorkdir}/empty` });
+  await active.fsBridge.writeFile({ filePath: `${active.containerWorkdir}/nonempty/keep`, data: 'keep', mkdir: true });
+  for (const path of ['binary', 'empty', 'absent', 'missing/parents/absent', 'binary']) {
+    const result = await tool.execute('delete', { input: wrap(`*** Delete File: ${path}`) });
+    assert.deepEqual(result.details, { added: [], modified: [], deleted: [path] });
+    execFileSync('docker', ['exec', active.runtimeId, 'test', '!', '-e', `${active.containerWorkdir}/${path}`]);
+  }
+  await assert.rejects(tool.execute('nonempty', { input: wrap('*** Delete File: nonempty') }), /not empty|ENOTEMPTY/);
+  assert.equal((await active.fsBridge.readFile({ filePath: `${active.containerWorkdir}/nonempty/keep` })).toString(), 'keep');
+  await assert.rejects(tool.execute('delete-escape', { input: wrap('*** Delete File: /tmp/absent') }), /outside|escape|workspace/i);
   for (const access of ['none', 'ro'] as const) {
     const isolatedConfig = { agents: { defaults: { ...config.agents.defaults, sandbox: { ...config.agents.defaults.sandbox, workspaceAccess: access } } } };
     const isolatedCtx = { ...ctx, config: isolatedConfig, runtimeConfig: isolatedConfig, sessionKey: `${ctx.sessionKey}:${access}` };

@@ -16,7 +16,6 @@ const fixtures = fileURLToPath(new URL("fixtures", import.meta.url));
 const rejectFixtures = new Set([
   "005_rejects_empty_patch",
   "006_rejects_missing_context",
-  "007_rejects_missing_file_delete",
   "008_rejects_empty_update_hunk",
   "009_requires_existing_file_for_update",
   "012_delete_directory_fails",
@@ -25,6 +24,7 @@ const rejectFixtures = new Set([
 ]);
 
 const fixtureResults: Record<string, Omit<PatchResult, "text">> = {
+  "007_rejects_missing_file_delete": { added: [], modified: [], deleted: ["missing.txt"] },
   "001_add_file": { added: ["bar.md"], modified: [], deleted: [] },
   "002_multiple_operations": { added: ["nested/new.txt"], modified: ["modify.txt"], deleted: ["delete.txt"] },
   "003_multiple_chunks": { added: [], modified: ["multi.txt"], deleted: [] },
