@@ -119,10 +119,9 @@ Unrestricted Linux sessions use `/` as the root; workspace-only sessions use
 OpenClaw's effective allowed root. Relative patch paths still use the agent
 workspace. The root does not grant additional OS permissions.
 
-- Host reads are capped at **64 MiB per file**, raised from the library's 16 MiB
-  default. This is the existing file's size, not the patch request's size. It is
-  a plugin code setting, not a global OpenClaw configuration setting. Sandbox
-  reads retain their backend's behavior.
+- Host reads have **no plugin-imposed file-size cap** (`maxBytes: Infinity`
+  disables the library's default cap). The engine still reads complete files
+  into memory. Sandbox reads retain their backend's behavior.
 - File content access is for regular files, not FIFOs, sockets, or unsafe
   device/process-descriptor paths. Directory deletion remains unsupported.
 - The library's portable destination checks can reject legal POSIX names such

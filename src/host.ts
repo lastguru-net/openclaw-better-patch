@@ -2,13 +2,10 @@ import { parse, relative, resolve } from "node:path";
 import { root } from "openclaw/plugin-sdk/file-access-runtime";
 import type { PatchFileSystem } from "./filesystem.js";
 
-/** File bytes read internally, not the size of the patch request. */
-export const HOST_MAX_READ_BYTES = 64 * 1024 * 1024;
-
 export async function hostFileSystem(cwd: string, allowedRoot?: string, signal?: AbortSignal): Promise<PatchFileSystem> {
   // On Linux unrestricted sessions use "/", not the agent workspace.
   const files = await root(allowedRoot ?? parse(resolve(cwd)).root, {
-    maxBytes: HOST_MAX_READ_BYTES,
+    maxBytes: Infinity, // Disable the library default; no plugin-imposed file-size cap.
     symlinks: "follow-within-root",
   });
   const rel = (path: string) => relative(files.rootDir, path);
