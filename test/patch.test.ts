@@ -142,7 +142,7 @@ test("an end-of-file marker selects the final repeated match", async () => inTem
   assert.equal(await readFile(join(cwd, "tail.txt"), "utf8"), "same\nmiddle\nlast\n");
 }));
 
-test("default updates use legacy LF reconstruction for touched CRLF lines", async () => inTemp(async (cwd) => {
+test("updates reconstruct touched CRLF lines with LF", async () => inTemp(async (cwd) => {
   await writeFile(join(cwd, "crlf.txt"), Buffer.from("one\r\ntwo\r\n"));
   await applyPatch(wrap("*** Update File: crlf.txt\n@@\n-one\n+uno"), cwd);
   assert.deepEqual(await readFile(join(cwd, "crlf.txt")), Buffer.from("uno\ntwo\r\n"));

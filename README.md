@@ -1,8 +1,8 @@
 # OpenClaw Better Patch
 
 `@lastguru-net/openclaw-better-patch` provides the `better_patch` file-editing tool
-for OpenClaw. Version **0.1.0** is a compatibility baseline based on OpenAI
-Codex's `apply_patch` implementation, not yet a redesigned patch format.
+for OpenClaw. It is based on OpenAI Codex's `apply_patch` implementation.
+The project is under development and has not been released.
 
 Works with stable **OpenClaw 2026.9.2** and its built-in harness. No Codex binary,
 Codex service, model-provider dependency, or shell command is used to edit files.
@@ -11,7 +11,7 @@ its OpenClaw host. Older OpenClaw releases are not supported.
 
 ## Install from this repository
 
-This initial version is not published to npm. With Node.js 22.22.3+ and npm installed:
+The package is not published to npm. With Node.js 22.22.3+ and npm installed:
 
 ```sh
 git clone https://github.com/lastguru-net/openclaw-better-patch.git
@@ -83,7 +83,7 @@ Important inherited behavior:
   newline on updates and replacing matched context with patch text. Untouched
   CRLF lines can retain their CR while changed lines use LF. This is not a
   byte-preserving editor; the optional upstream line-ending preservation feature
-  is intentionally not included in this baseline.
+  is not implemented.
 
 OpenClaw-specific adaptation:
 
@@ -127,17 +127,15 @@ workspace. The root does not grant additional OS permissions.
 - The library's portable destination checks can reject legal POSIX names such
   as a leading `C:name.txt`. This is not a general ban on colons in filenames.
 - Host writes use atomic replacement for each file, not a transaction across
-  the patch. Adds still overwrite existing files. New files use the library's
+  the patch. Adds overwrite existing files. New files use the library's
   `0600` default; replacement normally preserves existing permission bits.
   Other metadata and inode identity are not preserved as with in-place writes.
-- Symlink reads follow targets within the allowed root. **Deferred behavior:**
-  replacement of a file symlink replaces the link itself rather than editing
-  its target; directory symlinks can be followed within the root. Files with
+- Symlink reads follow targets within the allowed root. Replacement of a file
+  symlink replaces the link itself rather than editing its target; directory symlinks can be followed within the root. Files with
   multiple hardlinks are rejected by the library's default read/write guards.
-  No custom link-handling workaround is applied in this version.
-- The library's default identity checks remain enabled. Filesystem-specific
-  compatibility changes are deferred. A post-publication verification error
-  does not guarantee that the replacement was rolled back.
+  No custom link-handling workaround is applied.
+- The library's default identity checks are enabled. A verification error after
+  writing does not guarantee that the replacement was rolled back.
 
 ## Development
 

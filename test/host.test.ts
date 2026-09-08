@@ -6,7 +6,7 @@ import test from "node:test";
 import { hostFileSystem } from "../src/host.js";
 import { createBetterPatchTool } from "../src/index.js";
 
-test("host patches files above the former 64 MiB read cap", async t => {
+test("host patches a 65 MiB file", async t => {
   const cwd = await mkdtemp(join(tmpdir(), "better-patch-large-"));
   t.after(() => rm(cwd, { recursive: true, force: true }));
   const path = join(cwd, "large");
