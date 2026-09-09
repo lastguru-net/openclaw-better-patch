@@ -1,8 +1,9 @@
 OpenClaw Better Patch
 Copyright 2026 Dmitry Golubev
 
-The patch parser, matching and update algorithms, and upstream scenario fixtures
-are adapted from OpenAI Codex, licensed under Apache License 2.0:
+This project originated as an adaptation of the OpenAI Codex parser and patch
+engine. Its upstream scenario fixtures remain copied from Codex. Applicable
+upstream attribution is retained under Apache License 2.0:
 OpenAI Codex
 Copyright 2025 OpenAI
 https://github.com/openai/codex
@@ -10,6 +11,11 @@ Reference: rust-v0.153.4, commit 3d2ee51ca2d5db578f328aa75e20aa22c0197c9a
 Sources: codex-rs/apply-patch/src/{parser,streaming_parser,seek_sequence,file_update,lib}.rs
          codex-rs/apply-patch/tests/fixtures/scenarios/
 
-Changes: ported the default patch engine to TypeScript/Node.js and added an
-OpenClaw tool adapter; omitted Codex environment routing, streaming execution,
-exec-server integration, approval machinery, and optional line-ending modes.
+Changes include an OpenClaw tool adapter and a parser/engine redesign using
+file-record parsing, ordered edit operations, source-offset references, candidate
+ranking, and a piece-table edit plan. Better Patch adds source-context retention,
+line-ending inference, ambiguity rejection, anchored insertions, and
+content-independent idempotent deletion. Codex environment routing, streaming
+execution, exec-server integration, and approval machinery are not included.
+The redesign is not represented as a clean-room implementation or as a finding
+that upstream attribution obligations have ended.

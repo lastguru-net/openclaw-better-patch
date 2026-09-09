@@ -69,9 +69,12 @@ through OpenClaw's normal tool-error handling.
 
 The reference is Codex **rust-v0.153.4**, commit
 [`3d2ee51`](https://github.com/openai/codex/tree/3d2ee51ca2d5db578f328aa75e20aa22c0197c9a/codex-rs/apply-patch).
-The parser, matching order, file-update algorithm, preflight validation,
-and summary format are adapted into TypeScript. There is no streaming parser or
-Codex-specific execution/approval/environment machinery.
+The patch language and compatibility scenarios use this reference. The TypeScript
+parser tokenizes file records into ordered keep/insert/remove operations. The
+engine ranks candidate matches, plans edits using source-line offsets and a piece
+table, then renders with the line-ending rules below. Preflight and sequential
+execution share this engine. There is no streaming execution or Codex-specific
+approval/environment machinery.
 
 Patch behavior:
 
@@ -194,5 +197,7 @@ use the same bridge interface but have not been integration-tested here.
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE) for upstream attribution
-and the adaptation reference.
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE) for project provenance and
+upstream attribution, including the copied scenario fixtures. The parser/engine
+redesign is not a claim of clean-room development or removal of inherited
+attribution obligations.

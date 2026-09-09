@@ -1,126 +1,126 @@
-// Adapted from OpenAI Codex rust-v0.153.4 (Apache-2.0). See NOTICE.
-export type Chunk = {
-  context?: string;
-  old: string[];
-  replacement: string[];
-  // For each replacement line: its old-line index for context, or null for additions.
-  sources: (number | null)[];
-  eof: boolean;
-};
-export type Hunk =
+// Project parser redesign retaining the patch-language compatibility contract.
+// The project originated as a Codex adaptation; see NOTICE for provenance.
+export type EditLine = { kind: "keep" | "insert" | "remove"; text: string };
+export type EditBlock = { anchor?: string; atEnd: boolean; lines: EditLine[] };
+export type FileEdit =
   | { kind: "add"; path: string; contents: string }
   | { kind: "delete"; path: string }
-  | { kind: "update"; path: string; move?: string; chunks: Chunk[]; line: number };
+  | { kind: "update"; path: string; destination?: string; blocks: EditBlock[] };
 
-// Rust str::trim uses Unicode White_Space, unlike JavaScript trim (notably BOM/NEL).
-export const trim = (s: string): string => s.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "");
-export const trimEnd = (s: string): string => s.replace(/\p{White_Space}+$/u, "");
-const begin = "*** Begin Patch";
-const end = "*** End Patch";
-const invalid = (message: string): never => { throw new Error(`Invalid patch: ${message}`); };
-const invalidHunk = (line: number, message: string): never => {
-  throw new Error(`Invalid patch hunk on line ${line}: ${message}`);
+type Token = { raw: string; right: string; stripped: string; number: number };
+type FileRecord = { kind: FileEdit["kind"]; path: string; header: Token; body: Token[] };
+const fail = (reason: string, token?: Token): never => {
+  throw new Error(`Invalid patch${token ? ` at line ${token.number}` : ""}: ${reason}`);
 };
-const empty = (chunk: Chunk): boolean => !chunk.old.length && !chunk.replacement.length;
-const chunk = (context?: string): Chunk => ({ context, old: [], replacement: [], sources: [], eof: false });
+const strip = (text: string): string => text.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "");
+const finish = "*** End Patch";
 
-/** Parse the complete patch before making any filesystem changes. */
-export function parsePatch(patch: string): Hunk[] {
-  let lines = trim(patch).split(/\r?\n/);
-  if (!(trim(lines[0]) === begin && trim(lines.at(-1)!) === end) &&
-      lines.length >= 4 && ["<<EOF", "<<'EOF'", '<<"EOF"'].includes(lines[0]) &&
-      lines.at(-1)!.endsWith("EOF")) {
-    lines = lines.slice(1, -1);
-  }
-  if (trim(lines[0]) !== begin) invalid(`The first line of the patch must be '${begin}'`);
-  if (trim(lines.at(-1)!) !== end) invalid(`The last line of the patch must be '${end}'`);
+function tokenize(input: string): Token[] {
+  const rows = strip(input).split(/\r?\n/);
+  const wrapped = rows.length >= 4 && /^<<(?:EOF|'EOF'|"EOF")$/.test(rows[0]) && rows.at(-1)!.endsWith("EOF");
+  const payload = wrapped ? rows.slice(1, -1) : rows;
+  const tokens = payload.map((raw, index) => ({
+    raw, right: raw.replace(/\p{White_Space}+$/u, ""), stripped: strip(raw), number: index + 1,
+  }));
+  if (tokens[0].stripped !== "*** Begin Patch") fail("Missing Begin Patch marker");
+  if (tokens.at(-1)!.stripped !== finish) fail("Missing End Patch marker");
+  return tokens.slice(1);
+}
 
-  const hunks: Hunk[] = [];
-  let ended = false;
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i];
-    const number = i + 1;
-    const current = hunks.at(-1);
-    const trimmed = trim(line);
-    if (ended) {
-      if (trimmed) invalid(`The last line of the patch must be '${end}'`);
-      continue;
+/** Separate file records before interpreting their individual bodies. */
+function records(tokens: Token[]): FileRecord[] {
+  const result: FileRecord[] = [];
+  let active: FileRecord | undefined;
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index];
+    // In update bodies, leading whitespace belongs to context, including text
+    // that resembles a header. The final envelope marker is an exception.
+    const header = active?.kind === "update" && index !== tokens.length - 1 ? token.right : token.stripped;
+    if (header === finish) {
+      if (tokens.slice(index + 1).some(item => item.stripped !== "")) fail("Content after End Patch marker", token);
+      return result;
     }
-    // The upstream streaming parser only right-trims headers within updates;
-    // its final End Patch marker is separately fully trimmed by finish().
-    const header = current?.kind === "update" && i < lines.length - 1 ? trimEnd(line) : trimmed;
-    const match = /^(\*\*\* (Add|Delete|Update) File: )(.+)$/.exec(header);
-    if (header === end || match) {
-      if (current?.kind === "update") {
-        if (!current.chunks.length) {
-          invalidHunk(current.line, `Update file hunk for path '${current.path}' is empty`);
-        }
-        if (empty(current.chunks.at(-1)!)) {
-          invalidHunk(number, header === end ? "Update hunk does not contain any lines" :
-            `Unexpected line found in update hunk: '${header}'. Every line should start with ' ' (context line), '+' (added line), or '-' (removed line)`);
-        }
-      }
-      if (header === end) { ended = true; continue; }
-      const path = match![3];
-      switch (match![2]) {
-        case "Add": hunks.push({ kind: "add", path, contents: "" }); break;
-        case "Delete": hunks.push({ kind: "delete", path }); break;
-        case "Update": hunks.push({ kind: "update", path, chunks: [], line: number }); break;
-      }
-      continue;
+    const declaration = /^\*\*\* (Add|Delete|Update) File: (.+)$/.exec(header);
+    if (declaration) {
+      active = {
+        kind: declaration[1].toLowerCase() as FileEdit["kind"], path: declaration[2], header: token, body: [],
+      };
+      result.push(active);
+    } else if (active) {
+      active.body.push(token);
+    } else {
+      fail(token.stripped.startsWith("*** Environment ID:")
+        ? "Environment ID routing is not supported; paths use the OpenClaw workspace"
+        : "Expected a file declaration", token);
     }
-    if (!current && trimmed.startsWith("*** Environment ID:")) {
-      invalid("Environment ID routing is not supported by better_patch; paths use the OpenClaw workspace");
-    }
-    if (current?.kind === "add" && line.startsWith("+")) {
-      current.contents += line.slice(1) + "\n";
-      continue;
-    }
-    if (current?.kind !== "update") {
-      invalidHunk(number, `'${trimmed}' is not a valid hunk header. Valid hunk headers: '*** Add File: {path}', '*** Delete File: {path}', '*** Update File: {path}'`);
-    }
-    const update = current as Extract<Hunk, { kind: "update" }>;
-    const right = trimEnd(line);
-    const last = update.chunks.at(-1);
-    const isContext = right === "@@" || right.startsWith("@@ ");
-    const unexpected = () => invalidHunk(number,
-      `Unexpected line found in update hunk: '${line}'. Every line should start with ' ' (context line), '+' (added line), or '-' (removed line)`);
-    const expectedContext = () => invalidHunk(number,
-      `Expected update hunk to start with a @@ context marker, got: '${line}'`);
-    if (last?.eof) {
-      if (!right) continue;
-      if (!isContext) expectedContext();
-    }
-    if (!update.chunks.length && update.move === undefined && right.startsWith("*** Move to: ")) {
-      update.move = right.slice("*** Move to: ".length);
-      continue;
-    }
-    if (isContext) {
-      if (last && empty(last)) unexpected();
-      update.chunks.push(chunk(right === "@@" ? undefined : right.slice(3)));
-      continue;
-    }
-    if (right === "*** End of File") {
-      if (last && empty(last)) invalidHunk(number, "Update hunk does not contain any lines");
-      if (last) last.eof = true;
-      continue;
-    }
-    if (!line || [" ", "+", "-"].includes(line[0])) {
-      if (!last) update.chunks.push(chunk());
-      const target = update.chunks.at(-1)!;
-      const text = line.slice(1);
-      if (!line || line[0] === " ") {
-        target.sources.push(target.old.length);
-        target.old.push(text);
-        target.replacement.push(text);
-      } else if (line[0] === "+") {
-        target.sources.push(null);
-        target.replacement.push(text);
-      } else target.old.push(text);
-      continue;
-    }
-    if (last && !empty(last)) expectedContext();
-    unexpected();
   }
-  return hunks;
+  return result;
+}
+
+const anchorOf = (token: Token): boolean => token.right === "@@" || token.right.startsWith("@@ ");
+const eofOf = (token: Token): boolean => token.right === "*** End of File";
+
+function editLine(token: Token): EditLine {
+  const prefix = token.raw[0];
+  const kind = prefix === "+" ? "insert" : prefix === "-" ? "remove" :
+    prefix === " " || prefix === undefined ? "keep" : undefined;
+  if (kind === undefined) return fail("Expected context, insertion, removal, or an @@ marker", token);
+  return { kind, text: token.raw.slice(1) };
+}
+
+function updateRecord(record: FileRecord): FileEdit {
+  const { body } = record;
+  const blocks: EditBlock[] = [];
+  let destination: string | undefined;
+  let position = 0;
+  // EOF markers without a block carry no content. A destination declaration
+  // may occur once, anywhere in this otherwise-empty update preamble.
+  while (position < body.length) {
+    const token = body[position];
+    if (eofOf(token)) { position++; continue; }
+    if (destination === undefined && token.right.startsWith("*** Move to: ")) {
+      destination = token.right.slice("*** Move to: ".length);
+      position++;
+      continue;
+    }
+    break;
+  }
+  while (position < body.length) {
+    const start = body[position];
+    const block: EditBlock = { atEnd: false, lines: [] };
+    if (anchorOf(start)) {
+      if (start.right !== "@@") block.anchor = start.right.slice(3);
+      position++;
+    } else if (blocks.length) {
+      fail("Expected an @@ marker after an EOF block", start);
+    }
+    while (position < body.length && !anchorOf(body[position]) && !eofOf(body[position])) {
+      block.lines.push(editLine(body[position++]));
+    }
+    if (!block.lines.length) fail("Update block is empty", start);
+    if (position < body.length && eofOf(body[position])) {
+      block.atEnd = true;
+      position++;
+      while (position < body.length && body[position].right === "") position++;
+    }
+    blocks.push(block);
+  }
+  if (!blocks.length) fail("Update file has no edit blocks", record.header);
+  return { kind: "update", path: record.path, ...(destination === undefined ? {} : { destination }), blocks };
+}
+
+/** Parse and validate the whole document without accessing the filesystem. */
+export function parsePatch(input: string): FileEdit[] {
+  return records(tokenize(input)).map(record => {
+    if (record.kind === "update") return updateRecord(record);
+    if (record.kind === "delete") {
+      if (record.body.length) fail("Delete declarations do not accept a body", record.body[0]);
+      return { kind: "delete", path: record.path };
+    }
+    const contents = record.body.map(token => {
+      if (!token.raw.startsWith("+")) fail("Add file contents must start with +", token);
+      return token.raw.slice(1) + "\n";
+    }).join("");
+    return { kind: "add", path: record.path, contents };
+  });
 }
