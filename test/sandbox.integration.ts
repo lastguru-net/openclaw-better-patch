@@ -43,6 +43,23 @@ test('stable SDK uses the existing Docker sandbox for patch operations and enfor
   await tool.execute('preserve', { input: wrap('*** Update File: preserved\n@@\n keep\n-old\n+new\n tail') });
   assert.deepEqual(await active.fsBridge.readFile({ filePath: `${active.containerWorkdir}/preserved` }),
     Buffer.from('  keep \t\r\nnew\r\ntail'));
+  await active.fsBridge.mkdirp({ filePath: `${active.containerWorkdir}/allowed` });
+  await active.fsBridge.writeFile({ filePath: `${active.containerWorkdir}/outside/keep`, data: 'unchanged', mkdir: true });
+  execFileSync('docker', ['exec', active.runtimeId, 'ln', '-s', '../outside', `${active.containerWorkdir}/allowed/link`]);
+  const restrictedTool = createBetterPatchTool({ ...ctx, fsPolicy: { workspaceOnly: true, root: join(workspace, 'allowed') } }, resolve)!;
+  for (const body of [
+    '*** Add File: allowed/link/leak\n+bad',
+    '*** Update File: allowed/link/keep\n@@\n-unchanged\n+bad',
+    '*** Delete File: allowed/link/keep',
+    '*** Add File: allowed/plain\n+also cannot safely enforce this root',
+  ]) {
+    await assert.rejects(restrictedTool.execute('restricted', { input: wrap(body) }), /root-scoped bridge is required/);
+  }
+  assert.equal((await active.fsBridge.readFile({ filePath: `${active.containerWorkdir}/outside/keep` })).toString(), 'unchanged');
+  assert.equal(await active.fsBridge.stat({ filePath: `${active.containerWorkdir}/outside/leak` }), null);
+  assert.equal(await active.fsBridge.stat({ filePath: `${active.containerWorkdir}/allowed/plain` }), null);
+  await tool.execute('same-path-move', { input: wrap('*** Update File: moved/file\n*** Move to: moved/./file\n@@\n-new\n+same path retained') });
+  assert.equal((await active.fsBridge.readFile({ filePath: `${active.containerWorkdir}/moved/file` })).toString(), 'same path retained\n');
   await tool.execute('delete', { input: wrap('*** Delete File: moved/file') });
   await assert.rejects(readFile(join(workspace, 'moved/file')), { code: 'ENOENT' });
   await active.fsBridge.writeFile({ filePath: `${active.containerWorkdir}/binary`, data: Buffer.from([0xff, 0xfe]) });
@@ -56,6 +73,20 @@ test('stable SDK uses the existing Docker sandbox for patch operations and enfor
   await assert.rejects(tool.execute('nonempty', { input: wrap('*** Delete File: nonempty') }), /not empty|ENOTEMPTY/);
   assert.equal((await active.fsBridge.readFile({ filePath: `${active.containerWorkdir}/nonempty/keep` })).toString(), 'keep');
   await assert.rejects(tool.execute('delete-escape', { input: wrap('*** Delete File: /tmp/absent') }), /outside|escape|workspace/i);
+  const extraMount = join(workspace, 'extra-mount'); await mkdir(extraMount);
+  await writeFile(join(extraMount, 'keep'), 'outside workspace');
+  const mountedConfig = { agents: { defaults: { ...config.agents.defaults, sandbox: { ...config.agents.defaults.sandbox,
+    docker: { ...config.agents.defaults.sandbox.docker, binds: [`${extraMount}:/extra:rw`] },
+  } } } };
+  const mountedCtx = { ...ctx, config: mountedConfig, runtimeConfig: mountedConfig, sessionKey: `${ctx.sessionKey}:mount` };
+  const mounted = await resolveSandboxContext({ config: mountedConfig, agentId: ctx.agentId, sessionKey: mountedCtx.sessionKey, workspaceDir: workspace });
+  assert.ok(mounted?.fsBridge);
+  t.after(() => execFileSync('docker', ['rm', '-f', mounted.runtimeId], { stdio: 'pipe' }));
+  execFileSync('docker', ['exec', mounted.runtimeId, 'ln', '-s', '/extra', `${mounted.containerWorkdir}/mounted-link`]);
+  const mountedTool = createBetterPatchTool(mountedCtx, resolve)!;
+  await assert.rejects(mountedTool.execute('mounted-escape', { input: wrap('*** Add File: mounted-link/leak\n+bad') }), /additional mounts requires a root-scoped bridge/);
+  assert.equal(await readFile(join(extraMount, 'keep'), 'utf8'), 'outside workspace');
+  await assert.rejects(readFile(join(extraMount, 'leak')), { code: 'ENOENT' });
   for (const access of ['none', 'ro'] as const) {
     const isolatedConfig = { agents: { defaults: { ...config.agents.defaults, sandbox: { ...config.agents.defaults.sandbox, workspaceAccess: access } } } };
     const isolatedCtx = { ...ctx, config: isolatedConfig, runtimeConfig: isolatedConfig, sessionKey: `${ctx.sessionKey}:${access}` };

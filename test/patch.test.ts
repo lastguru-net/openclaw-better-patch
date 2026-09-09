@@ -373,3 +373,48 @@ for (const scenario of [
     await assert.rejects(readFile(join(cwd, "new.txt")), { code: "ENOENT" });
   }));
 }
+
+for (const destination of ["f", "./f", "sub/../f"]) {
+  test(`same resolved move destination ${destination} retains the updated file`, () => inTemp(async dir => {
+    await writeFile(join(dir, "f"), "old\n");
+    await applyVerifiedPatch(wrap(`*** Update File: f\n*** Move to: ${destination}\n@@\n-old\n+new`), dir);
+    assert.equal(await readFile(join(dir, "f"), "utf8"), "new\n");
+  }));
+}
+
+test("EOF chunks cannot reuse source consumed by an earlier chunk", () => inTemp(async dir => {
+  await writeFile(join(dir, "f"), "a\nb\nc\n");
+  await assert.rejects(applyVerifiedPatch(wrap("*** Add File: untouched\n+x\n*** Update File: f\n@@\n-b\n+B\n c\n@@\n-c\n+C\n*** End of File"), dir), /Failed to find expected lines/);
+  assert.equal(await readFile(join(dir, "f"), "utf8"), "a\nb\nc\n");
+  await assert.rejects(readFile(join(dir, "untouched")), { code: "ENOENT" });
+}));
+
+test("an unanchored insertion cannot intersect a consumed trailing blank", () => inTemp(async dir => {
+  await writeFile(join(dir, "f"), "a\n\n");
+  await assert.rejects(applyVerifiedPatch(wrap("*** Update File: f\n@@\n-a\n+A\n \n@@\n+tail"), dir), /Overlapping chunks/);
+  assert.equal(await readFile(join(dir, "f"), "utf8"), "a\n\n");
+}));
+
+for (const ending of ["\n", "\r\n"]) {
+  test(`unanchored addition precedes a trailing blank with ${JSON.stringify(ending)}`, () => inTemp(async dir => {
+    await writeFile(join(dir, "f"), `a${ending}${ending}`);
+    await applyVerifiedPatch(wrap("*** Update File: f\n@@\n+new"), dir);
+    assert.equal(await readFile(join(dir, "f"), "utf8"), `a${ending}new${ending}${ending}`);
+  }));
+}
+
+const moveA = "*** Update File: a\n*** Move to: ./b\n@@\n-A\n+M";
+for (const [name, operations] of Object.entries({
+  "move then update": `${moveA}\n*** Update File: b\n@@\n-B\n+C`,
+  "update then move": `*** Update File: b\n@@\n-B\n+C\n${moveA}`,
+  "move then delete": `${moveA}\n*** Delete File: b`,
+  "add then move": `*** Add File: b\n+B\n${moveA}`,
+  "two move destinations": `${moveA}\n*** Update File: c\n*** Move to: b\n@@\n-C\n+D`,
+})) {
+  test(`preflight rejects intersecting paths: ${name}`, () => inTemp(async dir => {
+    for (const [path, content] of [["a", "A\n"], ["b", "B\n"], ["c", "C\n"]]) await writeFile(join(dir, path), content);
+    await assert.rejects(applyVerifiedPatch(wrap(`*** Add File: untouched\n+x\n${operations}`), dir), /multiple operations target/);
+    for (const [path, content] of [["a", "A\n"], ["b", "B\n"], ["c", "C\n"]]) assert.equal(await readFile(join(dir, path), "utf8"), content);
+    await assert.rejects(readFile(join(dir, "untouched")), { code: "ENOENT" });
+  }));
+}

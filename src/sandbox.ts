@@ -1,4 +1,4 @@
-import { posix } from "node:path";
+import { posix, resolve } from "node:path";
 import type { OpenClawPluginApi, OpenClawPluginToolContext } from "openclaw/plugin-sdk/plugin-entry";
 import type { resolveSandboxContext } from "openclaw/plugin-sdk/agent-harness-runtime";
 import type { PatchFileSystem } from "./filesystem.js";
@@ -38,6 +38,25 @@ export function sandboxFileSystem(sandbox: Sandbox, signal?: AbortSignal, allowe
   if (!bridge) throw new Error("Sandbox filesystem bridge is unavailable");
   const root = allowedRoot === undefined ? undefined
     : bridge.resolvePath({ filePath: allowedRoot, cwd: sandbox.workspaceDir }).containerPath;
+  // The bridge confines operations to its own mounted roots. Its public API
+  // cannot atomically narrow that boundary or resolve aliases within a sub-root.
+  // A lexical check (or a separate stat check) cannot provide that guarantee.
+  if (root && posix.normalize(root) !== posix.normalize(sandbox.containerWorkdir)) {
+    throw new Error("Sandbox filesystem cannot enforce a narrower or different workspace root; a root-scoped bridge is required");
+  }
+  if (root) {
+    const separateAgentMount = sandbox.workspaceAccess !== "none"
+      && resolve(sandbox.agentWorkspaceDir) !== resolve(sandbox.workspaceDir);
+    const outsideResourceMount = sandbox.readOnlyResourceMounts?.some(mount => {
+      const rel = posix.relative(root, mount.containerPath);
+      return rel === ".." || rel.startsWith("../") || posix.isAbsolute(rel);
+    });
+    // The bridge can follow aliases into a different permitted mount. Without
+    // a root-scoped capability, custom mount topologies cannot prove this policy.
+    if (sandbox.docker.binds?.length || separateAgentMount || outsideResourceMount) {
+      throw new Error("Sandbox workspace-only access with additional mounts requires a root-scoped bridge");
+    }
+  }
   const writable = () => {
     signal?.throwIfAborted();
     if (sandbox.workspaceAccess === "ro") throw new Error("Sandbox workspace is read-only");

@@ -59,7 +59,8 @@ Patch syntax supports multiple files, adds, deletes, updates, and moves:
   An insertion-only chunk with a textual anchor inserts immediately after that
   matched source line. Without a textual anchor, insertion-only chunks append at
   the file ending (before an existing trailing blank line).
-- Use `*** End of File` after a chunk to match the file's ending.
+- Use `*** End of File` after a chunk to match the file's ending without moving
+  backward over an earlier chunk. Overlapping chunk edits are rejected.
 
 Success returns `Success. Updated the following files:` followed by `A`, `M`, and
 `D` paths. Moves are reported as `M` with the destination path. Errors are surfaced
@@ -86,8 +87,11 @@ Patch behavior:
   Use more context, a unique anchor, or `*** End of File` to disambiguate.
 - Adds and move destinations can overwrite existing files; missing parent
   directories are created.
-- Validate update contents and all operation paths, and reject repeated source
-  paths before editing. A later I/O failure can still leave earlier changes;
+- A move to the same resolved path is an ordinary update, not a deletion.
+- Validate update contents and all operation paths, and reject paths shared by
+  separate operations (including move destinations) before editing. Dependent
+  operations on the same path must be submitted as separate patches. A later I/O
+  failure can still leave earlier changes;
   patches are **not transactional** and no rollback is attempted.
 - Update sources must be valid UTF-8. Adds may overwrite arbitrary bytes.
 - Deletion does not read or decode contents, so binary files can be removed.
@@ -109,9 +113,16 @@ OpenClaw-specific adaptation:
 - Relative paths use the agent workspace (the sandbox workspace in sandboxed runs), not the Gateway process directory.
   Absolute paths and paths outside it are allowed only when OpenClaw's effective
   filesystem policy does not require workspace-only access.
-- Workspace-only policy checks both path spelling and resolved existing ancestors,
+- Host workspace-only policy checks path spelling and resolved existing ancestors,
   including move destinations. Like ordinary path-based filesystem operations,
   these checks are not an OS sandbox against concurrent hostile filesystem changes.
+- Sandboxed workspace-only calls require the allowed root to map to the sandbox's
+  full workspace. Custom sandbox roots, including narrower subdirectories, reject
+  before file access: the public bridge cannot enforce those boundaries at I/O.
+  Workspace-only sandbox calls also reject custom binds, a separate agent-workspace
+  mount, or resource mounts outside the allowed root, since aliases could enter
+  another bridge-permitted mount. Unrestricted sandbox calls retain the bridge's
+  own mount policy. Host calls continue to support narrower roots.
 - Configured sandboxes use the public `resolveSandboxContext` SDK and its filesystem
   bridge, including the session's stored skill selections. The context is resolved
   lazily once per tool instance; reads, writes, and deletes use the bridge, not host

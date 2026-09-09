@@ -43,7 +43,7 @@ function forms(value: string): string[] {
 function locate(source: Source, expected: string[], cursor: number, atEnd: boolean, path: string): number | undefined {
   if (expected.length === 0) return cursor;
   const last = source.size - expected.length;
-  if (last < 0) return undefined;
+  if (last < cursor) return undefined;
   const needles = expected.map(forms);
   let best = 4;
   let winner: number | undefined;
@@ -98,7 +98,7 @@ function compile(source: Source, blocks: EditBlock[], path: string): Change[] {
     let position: number | undefined;
     let shortened = false;
     if (consumed === 0) {
-      const append = source.size && source.matchText(source.size - 1) === "" ? source.size - 1 : source.size;
+      const append = source.size && source.raw(source.size - 1) === source.ending(source.size - 1) ? source.size - 1 : source.size;
       position = block.anchor === undefined ? append : cursor;
     } else {
       position = locate(source, expected, cursor, block.atEnd, path);
@@ -126,6 +126,11 @@ function compile(source: Source, blocks: EditBlock[], path: string): Change[] {
       }
     }
     changes.push({ position, consumed, output });
+  }
+  let consumedUntil = 0;
+  for (const change of [...changes].sort((a, b) => a.position - b.position)) {
+    if (change.position < consumedUntil) throw new Error(`Overlapping chunks in ${path}`);
+    consumedUntil = change.position + change.consumed;
   }
   return changes;
 }
@@ -183,13 +188,20 @@ async function execute(input: string, cwd: string, fs: PatchFileSystem, prefligh
   const targetOf = (edit: FileEdit): Target => ({ edit, source: fs.resolve(cwd, edit.path) });
   if (!edits.length) throw new Error("No files were modified.");
   if (preflight) {
-    const sources = new Set<string>();
+    const targets = new Set<string>();
     for (const edit of edits) {
       const target = targetOf(edit);
       await fs.checkPath(target.source);
-      if (edit.kind === "update" && edit.destination !== undefined) await fs.checkPath(fs.resolve(cwd, edit.destination));
-      if (sources.has(target.source)) throw new Error(`Invalid patch: multiple operations target ${target.source}`);
-      sources.add(target.source);
+      const paths = new Set([target.source]);
+      if (edit.kind === "update" && edit.destination !== undefined) {
+        const destination = fs.resolve(cwd, edit.destination);
+        await fs.checkPath(destination);
+        paths.add(destination);
+      }
+      for (const path of paths) {
+        if (targets.has(path)) throw new Error(`Invalid patch: multiple operations target ${path}`);
+        targets.add(path);
+      }
       if (target.edit.kind === "update") await revised(target, fs);
     }
   }
@@ -213,8 +225,8 @@ async function execute(input: string, cwd: string, fs: PatchFileSystem, prefligh
         const content = await revised(target, fs);
         const destination = edit.destination === undefined ? target.source : fs.resolve(cwd, edit.destination);
         await fs.checkPath(destination);
-        await fs.write(destination, content, edit.destination !== undefined);
-        if (edit.destination !== undefined) {
+        await fs.write(destination, content, destination !== target.source);
+        if (destination !== target.source) {
           await fs.checkPath(target.source);
           await fs.remove(target.source);
         }
