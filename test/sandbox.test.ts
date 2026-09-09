@@ -52,3 +52,36 @@ for (const [name, extra] of [
     assert.doesNotThrow(() => sandboxFileSystem({ ...fixture.context, ...extra }));
   });
 }
+
+test('sandbox metadata confirms missing parents without swallowing unconfirmed errors', async () => {
+  const fixture = sandbox();
+  const denied = new Error('permission denied');
+  fixture.context.fsBridge.stat = async ({ filePath }: { filePath: string }) => {
+    if (filePath === '/workspace/missing') return null;
+    if (filePath === '/workspace/file') return { type: 'file' };
+    if (filePath === '/workspace') return { type: 'directory' };
+    throw denied;
+  };
+  const files = sandboxFileSystem(fixture.context, undefined, '/host');
+  assert.deepEqual(await files.inspect('/workspace/file'), { kind: 'file' });
+  assert.equal(await files.inspect('/workspace/missing/parents/file'), null);
+  await assert.rejects(files.inspect('/workspace/denied'), error => error === denied);
+  await assert.rejects(files.inspect('/outside/file'), /outside the workspace/);
+  assert.equal(files.list, undefined);
+});
+
+test('sandbox metadata respects cancellation', async () => {
+  const fixture = sandbox();
+  fixture.context.fsBridge.stat = async () => { throw new Error('must not call'); };
+  const controller = new AbortController();
+  controller.abort();
+  const files = sandboxFileSystem(fixture.context, controller.signal);
+  await assert.rejects(files.inspect('/workspace/file'), { name: 'AbortError' });
+});
+
+test('sandbox workspace metadata does not stat outside the mount root', async () => {
+  const fixture = sandbox();
+  fixture.context.fsBridge.stat = async () => { throw new Error('root stat unsupported'); };
+  const files = sandboxFileSystem(fixture.context, undefined, '/host');
+  assert.deepEqual(await files.inspect('/workspace'), { kind: 'directory' });
+});

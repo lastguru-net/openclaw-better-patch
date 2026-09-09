@@ -17,7 +17,7 @@ test('registers a per-session factory and edits the workspace through the tool c
   assert.equal(tool.name, 'better_patch');
   const result = await tool.execute('test', { input: add('nested/file.txt') });
   assert.deepEqual(result, { content: [{ type: 'text', text: 'Success. Updated the following files:\nA nested/file.txt\n' }],
-    details: { added: ['nested/file.txt'], modified: [], deleted: [] } });
+    details: { added: ['nested/file.txt'], modified: [], deleted: [], unchanged: [] } });
   assert.equal(await readFile(join(root, 'nested/file.txt'), 'utf8'), 'hello\n');
   await assert.rejects(tool.execute('bad', { input: 7 }), /requires a string/);
   const controller = new AbortController();

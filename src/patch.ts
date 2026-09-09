@@ -1,6 +1,7 @@
 // Better Patch implementation redesign. Project provenance and license: see NOTICE.
 import { parsePatch, type EditBlock, type FileEdit } from "./parser.js";
 import type { PatchFileSystem } from "./filesystem.js";
+import { preflightFileSystem } from "./preflight.js";
 
 /** A source line is an offset range, not a normalized copy of its contents. */
 class Source {
@@ -166,72 +167,93 @@ function render(source: Source, changes: Change[]): string {
   return source.bom + output.join("");
 }
 
-export type PatchResult = { text: string; added: string[]; modified: string[]; deleted: string[] };
+export type PatchResult = { text: string; added: string[]; modified: string[]; deleted: string[]; unchanged: string[] };
 type Target = { edit: FileEdit; source: string };
+const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
+const equal = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((value, i) => value === b[i]);
 
-async function revised(target: Target, fs: PatchFileSystem): Promise<string> {
-  let original: string;
-  try { original = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(await fs.read(target.source)); }
-  catch (cause) { throw new Error(`Failed to read file to update ${target.source}: ${(cause as Error).message}`, { cause }); }
+async function revised(target: Target, fs: PatchFileSystem): Promise<{ original: Uint8Array; content: string }> {
+  let original: Uint8Array;
+  let text: string;
+  try {
+    original = await fs.read(target.source);
+    text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(original);
+  } catch (cause) { throw new Error(`Failed to read file to update ${target.source}: ${(cause as Error).message}`, { cause }); }
   if (target.edit.kind !== "update") throw new Error("Expected an update operation");
-  const document = new Source(original);
-  return render(document, compile(document, target.edit.blocks, target.source));
+  const document = new Source(text);
+  return { original, content: render(document, compile(document, target.edit.blocks, target.source)) };
+}
+
+async function perform(edit: FileEdit, cwd: string, fs: PatchFileSystem): Promise<boolean> {
+  const source = fs.resolve(cwd, edit.path);
+  await fs.checkPath(source);
+  if (edit.kind === "delete") {
+    if (!await fs.inspect(source)) return false;
+    try { await fs.remove(source); }
+    catch (cause) { throw new Error(`Failed to delete path ${source}: ${(cause as Error).message}`, { cause }); }
+  } else if (edit.kind === "add") {
+    const info = await fs.inspect(source);
+    if (info?.kind === "file" && equal(await fs.read(source), bytes(edit.contents))) return false;
+    await fs.write(source, edit.contents, true);
+  } else {
+    const { original, content } = await revised({ edit, source }, fs);
+    const destination = edit.destination === undefined ? source : fs.resolve(cwd, edit.destination);
+    await fs.checkPath(destination);
+    if (destination === source && equal(original, bytes(content))) return false;
+    await fs.write(destination, content, destination !== source);
+    if (destination !== source) {
+      await fs.checkPath(source);
+      await fs.remove(source);
+    }
+  }
+  return true;
 }
 
 async function execute(input: string, cwd: string, fs: PatchFileSystem, preflight: boolean): Promise<PatchResult> {
   const edits = parsePatch(input);
-  const targetOf = (edit: FileEdit): Target => ({ edit, source: fs.resolve(cwd, edit.path) });
   if (!edits.length) throw new Error("No files were modified.");
   if (preflight) {
-    const targets = new Set<string>();
-    for (const edit of edits) {
-      const target = targetOf(edit);
-      await fs.checkPath(target.source);
-      const paths = new Set([target.source]);
-      if (edit.kind === "update" && edit.destination !== undefined) {
-        const destination = fs.resolve(cwd, edit.destination);
-        await fs.checkPath(destination);
-        paths.add(destination);
-      }
-      for (const path of paths) {
-        if (targets.has(path)) throw new Error(`Invalid patch: multiple operations target ${path}`);
-        targets.add(path);
-      }
-      if (target.edit.kind === "update") await revised(target, fs);
-    }
+    const virtual = preflightFileSystem(fs);
+    for (const edit of edits) await perform(edit, cwd, virtual);
   }
-  const result: PatchResult = { text: "", added: [], modified: [], deleted: [] };
+  // Capture only explicitly named paths. Pure deletes never read file contents.
+  const paths = new Map<string, { label: string; written: boolean }>();
   for (const edit of edits) {
-    const target = targetOf(edit);
-    await fs.checkPath(target.source);
-    switch (edit.kind) {
-      case "delete":
-        try { await fs.remove(target.source); }
-        catch (cause) { throw new Error(`Failed to delete path ${target.source}: ${(cause as Error).message}`, { cause }); }
-        result.deleted.push(edit.path);
-        break;
-      case "add":
-        await fs.write(target.source, edit.contents, true);
-        result.added.push(edit.path);
-        break;
-      case "update": {
-        // Read again after preflight: earlier operations and other writers may
-        // have changed the source. Adapter guards remain authoritative at I/O.
-        const content = await revised(target, fs);
-        const destination = edit.destination === undefined ? target.source : fs.resolve(cwd, edit.destination);
-        await fs.checkPath(destination);
-        await fs.write(destination, content, destination !== target.source);
-        if (destination !== target.source) {
-          await fs.checkPath(target.source);
-          await fs.remove(target.source);
-        }
-        result.modified.push(edit.destination ?? edit.path);
-        break;
-      }
+    const source = fs.resolve(cwd, edit.path);
+    const previous = paths.get(source);
+    paths.set(source, { label: previous?.label ?? edit.path, written: previous?.written || edit.kind !== "delete" });
+    if (edit.kind === "update" && edit.destination !== undefined) {
+      const destination = fs.resolve(cwd, edit.destination);
+      paths.set(destination, { label: paths.get(destination)?.label ?? edit.destination, written: true });
     }
   }
-  const rows = [["A", result.added], ["M", result.modified], ["D", result.deleted]] as const;
-  result.text = "Success. Updated the following files:\n";
+  const initial = new Map<string, { kind: string; data?: Uint8Array } | null>();
+  for (const [path, spec] of paths) {
+    await fs.checkPath(path);
+    const info = await fs.inspect(path);
+    initial.set(path, info ? { ...info, ...(spec.written && info.kind === "file" ? { data: await fs.read(path) } : {}) } : null);
+  }
+  // Re-evaluate against current bytes, not the discarded preflight snapshot.
+  const mutated = new Set<string>();
+  for (const edit of edits) {
+    if (await perform(edit, cwd, fs)) {
+      mutated.add(fs.resolve(cwd, edit.path));
+      if (edit.kind === "update" && edit.destination !== undefined) mutated.add(fs.resolve(cwd, edit.destination));
+    }
+  }
+  const result: PatchResult = { text: "", added: [], modified: [], deleted: [], unchanged: [] };
+  for (const [path, spec] of paths) {
+    const before = initial.get(path)!;
+    const after = await fs.inspect(path);
+    if (!before && after) result.added.push(spec.label);
+    else if (before && !after) result.deleted.push(spec.label);
+    else if (!mutated.has(path) && before?.kind === after?.kind || !before && !after || before?.kind === "directory" && after?.kind === "directory"
+      || before?.data && after?.kind === "file" && equal(before.data, await fs.read(path))) result.unchanged.push(spec.label);
+    else result.modified.push(spec.label);
+  }
+  result.text = result.added.length || result.modified.length || result.deleted.length
+    ? "Success. Updated the following files:\n" : "No changes made.\n";
+  const rows = [["A", result.added], ["M", result.modified], ["D", result.deleted], ["N", result.unchanged]] as const;
   for (const [label, paths] of rows) for (const path of paths) result.text += `${label} ${path}\n`;
   return result;
 }

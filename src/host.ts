@@ -1,4 +1,5 @@
-import { parse, relative, resolve } from "node:path";
+import { basename, dirname, join, parse, relative, resolve } from "node:path";
+import { lstat } from "node:fs/promises";
 import { root } from "openclaw/plugin-sdk/file-access-runtime";
 import type { PatchFileSystem } from "./filesystem.js";
 
@@ -20,6 +21,29 @@ export async function hostFileSystem(cwd: string, allowedRoot?: string, signal?:
     async read(path) {
       check();
       return files.readBytes(rel(path));
+    },
+    async inspect(path) {
+      check();
+      try {
+        // Resolve the parent through the guarded root, then inspect only this
+        // leaf without following it. SDK typed listing stats every sibling and
+        // can fail spuriously when unrelated entries disappear concurrently.
+        if (resolve(path) === resolve(files.rootDir)) {
+          const stat = await files.stat("");
+          return { kind: stat.isFile ? "file" : stat.isDirectory ? "directory" : "other" };
+        }
+        const parent = await files.resolve(rel(dirname(path)));
+        const stat = await lstat(join(parent, basename(path)));
+        return { kind: stat.isFile() ? "file" : stat.isDirectory() ? "directory" : "other" };
+      } catch (error) {
+        const code = (error as { code?: string }).code;
+        if (code === "not-found" || code === "ENOENT" || code === "ENOTDIR") return null;
+        throw error;
+      }
+    },
+    async list(path) {
+      check();
+      return files.list(rel(path));
     },
     async write(path, contents, createParents) {
       check();

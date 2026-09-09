@@ -23,14 +23,14 @@ const rejectFixtures = new Set([
   "015_failure_after_partial_success_leaves_changes",
 ]);
 
-const fixtureResults: Record<string, Omit<PatchResult, "text">> = {
-  "007_rejects_missing_file_delete": { added: [], modified: [], deleted: ["missing.txt"] },
+const fixtureResults: Record<string, Omit<PatchResult, "text" | "unchanged"> & { unchanged?: string[] }> = {
+  "007_rejects_missing_file_delete": { added: [], modified: [], deleted: [], unchanged: ["missing.txt"] },
   "001_add_file": { added: ["bar.md"], modified: [], deleted: [] },
   "002_multiple_operations": { added: ["nested/new.txt"], modified: ["modify.txt"], deleted: ["delete.txt"] },
   "003_multiple_chunks": { added: [], modified: ["multi.txt"], deleted: [] },
-  "004_move_to_new_directory": { added: [], modified: ["renamed/dir/name.txt"], deleted: [] },
-  "010_move_overwrites_existing_destination": { added: [], modified: ["renamed/dir/name.txt"], deleted: [] },
-  "011_add_overwrites_existing_file": { added: ["duplicate.txt"], modified: [], deleted: [] },
+  "004_move_to_new_directory": { added: ["renamed/dir/name.txt"], modified: [], deleted: ["old/name.txt"] },
+  "010_move_overwrites_existing_destination": { added: [], modified: ["renamed/dir/name.txt"], deleted: ["old/name.txt"] },
+  "011_add_overwrites_existing_file": { added: [], modified: ["duplicate.txt"], deleted: [] },
   "014_update_file_appends_trailing_newline": { added: [], modified: ["no_newline.txt"], deleted: [] },
   "016_pure_addition_update_chunk": { added: [], modified: ["input.txt"], deleted: [] },
   "017_whitespace_padded_hunk_header": { added: [], modified: ["foo.txt"], deleted: [] },
@@ -42,11 +42,12 @@ const fixtureResults: Record<string, Omit<PatchResult, "text">> = {
   "022_update_file_end_of_file_marker": { added: [], modified: ["tail.txt"], deleted: [] },
 };
 
-function summary(result: Omit<PatchResult, "text">): string {
-  return "Success. Updated the following files:\n" + [
+function summary(result: Omit<PatchResult, "text" | "unchanged"> & { unchanged?: string[] }): string {
+  return (result.added.length || result.modified.length || result.deleted.length ? "Success. Updated the following files:\n" : "No changes made.\n") + [
     ...result.added.map((path) => `A ${path}\n`),
     ...result.modified.map((path) => `M ${path}\n`),
     ...result.deleted.map((path) => `D ${path}\n`),
+    ...(result.unchanged ?? []).map((path) => `N ${path}\n`),
   ].join("");
 }
 
@@ -117,7 +118,7 @@ for (const name of fixtureNames) {
     } else {
       assert.ifError(failure);
       const expected = fixtureResults[name];
-      assert.deepEqual(result, { ...expected, text: summary(expected) });
+      assert.deepEqual(result, { unchanged: [], ...expected, text: summary(expected) });
     }
   }));
 }
@@ -148,15 +149,15 @@ test("replacement lines inherit the original first line ending", async () => inT
   assert.deepEqual(await readFile(join(cwd, "crlf.txt")), Buffer.from("uno\r\ntwo\r\n"));
 }));
 
-test("standalone application allows repeated source paths and reports each operation", async () => inTemp(async (cwd) => {
+test("standalone application allows repeated source paths and reports one net modification", async () => inTemp(async (cwd) => {
   await writeFile(join(cwd, "same.txt"), "one\n");
   const result = await applyPatch(wrap(
     "*** Update File: same.txt\n@@\n-one\n+two\n*** Update File: same.txt\n@@\n-two\n+three",
   ), cwd);
   assert.equal(await readFile(join(cwd, "same.txt"), "utf8"), "three\n");
   assert.deepEqual(result, {
-    text: "Success. Updated the following files:\nM same.txt\nM same.txt\n",
-    added: [], modified: ["same.txt", "same.txt"], deleted: [],
+    text: "Success. Updated the following files:\nM same.txt\n",
+    added: [], modified: ["same.txt"], deleted: [], unchanged: [],
   });
 }));
 
@@ -187,15 +188,15 @@ test("accepts the standalone quoted heredoc wrapper", async () => inTemp(async (
   const result = await applyPatch(patch, cwd);
   assert.deepEqual(result, {
     text: "Success. Updated the following files:\nA wrapped.txt\n",
-    added: ["wrapped.txt"], modified: [], deleted: [],
+    added: ["wrapped.txt"], modified: [], deleted: [], unchanged: [],
   });
 }));
 
-test("native verification rejects duplicate target paths before writes", async () => inTemp(async (cwd) => {
+test("preflight checks repeated updates against preceding output", async () => inTemp(async (cwd) => {
   const path = join(cwd, "same.txt");
   await writeFile(path, "one\n");
   const patch = wrap("*** Update File: same.txt\n@@\n-one\n+two\n*** Update File: same.txt\n@@\n-one\n+three");
-  await assert.rejects(applyVerifiedPatch(patch, cwd), /multiple operations target/);
+  await assert.rejects(applyVerifiedPatch(patch, cwd), /Failed to find expected lines/);
   assert.equal(await readFile(path, "utf8"), "one\n");
 }));
 
@@ -214,7 +215,7 @@ test("native verification applies valid operations and groups the A/M/D summary"
   const result = await applyVerifiedPatch(patch, cwd);
   assert.deepEqual(result, {
     text: "Success. Updated the following files:\nA add.txt\nM modify.txt\nD delete.txt\n",
-    added: ["add.txt"], modified: ["modify.txt"], deleted: ["delete.txt"],
+    added: ["add.txt"], modified: ["modify.txt"], deleted: ["delete.txt"], unchanged: [],
   });
   assert.equal(await readFile(join(cwd, "modify.txt"), "utf8"), "new\n");
   assert.equal(await readFile(join(cwd, "add.txt"), "utf8"), "created\n");
@@ -404,20 +405,14 @@ for (const ending of ["\n", "\r\n"]) {
 }
 
 const moveA = "*** Update File: a\n*** Move to: ./b\n@@\n-A\n+M";
-for (const [name, operations] of Object.entries({
-  "move then update": `${moveA}\n*** Update File: b\n@@\n-B\n+C`,
-  "update then move": `*** Update File: b\n@@\n-B\n+C\n${moveA}`,
-  "move then delete": `${moveA}\n*** Delete File: b`,
-  "add then move": `*** Add File: b\n+B\n${moveA}`,
-  "two move destinations": `${moveA}\n*** Update File: c\n*** Move to: b\n@@\n-C\n+D`,
-})) {
-  test(`preflight rejects intersecting paths: ${name}`, () => inTemp(async dir => {
-    for (const [path, content] of [["a", "A\n"], ["b", "B\n"], ["c", "C\n"]]) await writeFile(join(dir, path), content);
-    await assert.rejects(applyVerifiedPatch(wrap(`*** Add File: untouched\n+x\n${operations}`), dir), /multiple operations target/);
-    for (const [path, content] of [["a", "A\n"], ["b", "B\n"], ["c", "C\n"]]) assert.equal(await readFile(join(dir, path), "utf8"), content);
-    await assert.rejects(readFile(join(dir, "untouched")), { code: "ENOENT" });
-  }));
-}
+test("stale context after a move rejects before any writes", () => inTemp(async dir => {
+  await writeFile(join(dir, "a"), "A\n");
+  await writeFile(join(dir, "b"), "B\n");
+  await assert.rejects(applyVerifiedPatch(wrap(`*** Add File: untouched\n+x\n${moveA}\n*** Update File: b\n@@\n-B\n+C`), dir), /Failed to find expected lines/);
+  assert.equal(await readFile(join(dir, "a"), "utf8"), "A\n");
+  assert.equal(await readFile(join(dir, "b"), "utf8"), "B\n");
+  await assert.rejects(readFile(join(dir, "untouched")), { code: "ENOENT" });
+}));
 
 const logicalEndings = ["\n", "\r", "\r\n", "\n\r"];
 for (const ending of logicalEndings) {

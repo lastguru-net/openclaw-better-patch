@@ -32,6 +32,12 @@ test('stable SDK uses the existing Docker sandbox for patch operations and enfor
   assert.equal(resolved?.runtimeId, active.runtimeId);
   assert.equal(resolved?.workspaceDir, active.workspaceDir);
   const tool = createBetterPatchTool(ctx, resolve)!;
+  const dependent = await tool.execute('dependent', { input: wrap('*** Add File: dependent\n+one\n*** Update File: dependent\n@@\n-one\n+two') });
+  assert.deepEqual(dependent.details, { added: ['dependent'], modified: [], deleted: [], unchanged: [] });
+  const noop = await tool.execute('noop', { input: wrap('*** Add File: dependent\n+two\n*** Update File: dependent\n@@\n-two\n+two\n*** Delete File: not-present') });
+  assert.deepEqual(noop.details, { added: [], modified: [], deleted: [], unchanged: ['dependent', 'not-present'] });
+  await assert.rejects(tool.execute('bad-dependent', { input: wrap('*** Add File: uncreated\n+one\n*** Update File: uncreated\n@@\n-wrong\n+two') }), /expected lines/);
+  assert.equal(await active.fsBridge.stat({ filePath: `${active.containerWorkdir}/uncreated` }), null);
   await tool.execute('add', { input: wrap('*** Add File: nested/file\n+old') });
   await tool.execute('move', { input: wrap('*** Update File: nested/file\n*** Move to: moved/file\n@@\n-old\n+new') });
   assert.equal((await active.fsBridge.readFile({ filePath: `${active.containerWorkdir}/moved/file` })).toString(), 'new\n');
@@ -69,9 +75,11 @@ test('stable SDK uses the existing Docker sandbox for patch operations and enfor
   await active.fsBridge.writeFile({ filePath: `${active.containerWorkdir}/binary`, data: Buffer.from([0xff, 0xfe]) });
   await active.fsBridge.mkdirp({ filePath: `${active.containerWorkdir}/empty` });
   await active.fsBridge.writeFile({ filePath: `${active.containerWorkdir}/nonempty/keep`, data: 'keep', mkdir: true });
+  const remainingDeleteTargets = new Set(['binary', 'empty']);
   for (const path of ['binary', 'empty', 'absent', 'missing/parents/absent', 'binary']) {
+    const existed = remainingDeleteTargets.delete(path);
     const result = await tool.execute('delete', { input: wrap(`*** Delete File: ${path}`) });
-    assert.deepEqual(result.details, { added: [], modified: [], deleted: [path] });
+    assert.deepEqual(result.details, { added: [], modified: [], deleted: existed ? [path] : [], unchanged: existed ? [] : [path] });
     execFileSync('docker', ['exec', active.runtimeId, 'test', '!', '-e', `${active.containerWorkdir}/${path}`]);
   }
   await assert.rejects(tool.execute('nonempty', { input: wrap('*** Delete File: nonempty') }), /not empty|ENOTEMPTY/);

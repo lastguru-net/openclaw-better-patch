@@ -62,9 +62,14 @@ Patch syntax supports multiple files, adds, deletes, updates, and moves:
 - Use `*** End of File` after a chunk to match the file's ending without moving
   backward over an earlier chunk. Overlapping chunk edits are rejected.
 
-Success returns `Success. Updated the following files:` followed by `A`, `M`, and
-`D` paths. Moves are reported as `M` with the destination path. Errors are surfaced
-through OpenClaw's normal tool-error handling.
+Results summarize each explicitly named path once, comparing initial and final
+state: `A` added, `M` modified, `D` deleted, and `N` unchanged. Add then update
+reports only `A`; Add overwriting an existing file reports `M`. Moves report source
+and destination changes. An all-unchanged result says `No changes made.`; otherwise
+it starts with `Success. Updated the following files:`. Structured results include
+`added`, `modified`, `deleted`, and `unchanged` arrays. Net unchanged does not mean
+no intermediate writes occurred when separate operations cancel each other.
+Errors are surfaced through OpenClaw's normal tool-error handling.
 
 ## Compatibility and boundaries
 
@@ -89,14 +94,19 @@ Patch behavior:
 - Adds and move destinations can overwrite existing files; missing parent
   directories are created.
 - A move to the same resolved path is an ordinary update, not a deletion.
-- Validate update contents and all operation paths, and reject paths shared by
-  separate operations (including move destinations) before editing. Dependent
-  operations on the same path must be submitted as separate patches. A later I/O
-  failure can still leave earlier changes;
-  patches are **not transactional** and no rollback is attempted.
+- Preflight simulates operations in written order using a virtual filesystem.
+  Later updates see preceding additions, updates, moves, and deletions. Invalid
+  dependent matches reject before writes; operations are not sorted by type.
+  Execution re-reads current source bytes. Preflight does not prove permissions,
+  prevent concurrent changes, or make patches transactional; later I/O failures
+  can leave partial changes and no rollback is attempted.
+- Exact unchanged updates (including same-path moves), byte-identical Adds to
+  regular files, and deletion of missing paths skip their mutation calls. No
+  whitespace, BOM, or line-ending normalization is used for equality. Moving
+  to a different path is not skipped. This is not duplicate-request protection.
 - Update sources must be valid UTF-8. Adds may overwrite arbitrary bytes.
 - Deletion does not read or decode contents, so binary files can be removed.
-  Successful deletions, including missing-path no-ops, are reported with `D`.
+  Missing-path deletions are reported as unchanged (`N`).
 - Context and untouched lines retain their source text and line endings, even
   with tolerant matching, except when a line becomes or ceases to be the last line.
 - Added/replacement lines inherit the preceding output line's ending. At the start
@@ -134,7 +144,10 @@ OpenClaw-specific adaptation:
 - Configured sandboxes use the public `resolveSandboxContext` SDK and its filesystem
   bridge, including the session's stored skill selections. The context is resolved
   lazily once per tool instance; reads, writes, and deletes use the bridge, not host
-  filesystem calls. Read-only workspaces reject writes. Missing sandbox context
+  filesystem calls. The bridge has no directory-listing API, so deleting an
+  existing directory still relies on actual nonrecursive removal to reject any
+  unobserved children. Host preflight can check directory contents. Read-only
+  workspaces reject writes. Missing sandbox context
   is an error, never permission to fall back to host files.
 - Remote-worker placements are distinct from configured sandboxes: OpenClaw injects
   their exact runtime-owned bridge separately and does not expose it to plugin tools.
@@ -225,3 +238,10 @@ under [Apache-2.0](LICENSES/Apache-2.0.txt), with attribution in
 MIT does not relicense third-party material or remove any remaining Apache-2.0
 obligations. The package includes both license texts and NOTICE; fixture data
 is not included in the package.
+
+
+Whole-patch atomicity is tracked in [issue #2](https://github.com/lastguru-net/openclaw-better-patch/issues/2).
+Host entry inspection uses guarded parent resolution and leaf-only lstat so
+dangling symlinks remain distinguishable from missing paths without following them.
+Preflight tracks normalized paths, not a canonical identity graph of filesystem
+aliases. Adapter guards remain authoritative for symlinks and actual I/O.

@@ -68,6 +68,32 @@ export function sandboxFileSystem(sandbox: Sandbox, signal?: AbortSignal, allowe
       if (root) assertSandboxRoot(root, path);
     },
     read: path => bridge.readFile({ filePath: path, signal }),
+    async inspect(path) {
+      signal?.throwIfAborted();
+      if (root) assertSandboxRoot(root, path);
+      // The provisioned workspace is a directory. Bridge stat anchors an entry
+      // through its parent and cannot stat the mount root through outside '/'.
+      if (posix.normalize(path) === posix.normalize(sandbox.containerWorkdir)) return { kind: "directory" };
+      try {
+        const stat = await bridge.stat({ filePath: path, signal });
+        return stat === null ? null : { kind: stat.type };
+      } catch (error) {
+        // Some bridge builds reject existing nonregular entries during stat's
+        // preliminary file guard. Preserve existence without assuming a type.
+        if ((error as { cause?: { code?: string } }).cause?.code === "not-file") return { kind: "other" };
+        // A missing parent can make stat throw rather than return null. Only
+        // an explicitly absent ancestor establishes absence; retain all other errors.
+        for (let probe = posix.dirname(path); ;) {
+          signal?.throwIfAborted();
+          const info = await bridge.stat({ filePath: probe, signal }).catch(() => undefined);
+          if (info === null) return null;
+          if (info !== undefined) throw error;
+          const parent = posix.dirname(probe);
+          if (parent === probe) throw error;
+          probe = parent;
+        }
+      }
+    },
     async write(path, contents, createParents) {
       writable();
       await bridge.writeFile({ filePath: path, data: contents, mkdir: createParents, signal });
