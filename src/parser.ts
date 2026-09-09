@@ -16,7 +16,7 @@ const strip = (text: string): string => text.replace(/^\p{White_Space}+|\p{White
 const finish = "*** End Patch";
 
 function tokenize(input: string): Token[] {
-  const rows = strip(input).split(/\r?\n/);
+  const rows = strip(input).split(/\r\n|\n\r|\r|\n/);
   const wrapped = rows.length >= 4 && /^<<(?:EOF|'EOF'|"EOF")$/.test(rows[0]) && rows.at(-1)!.endsWith("EOF");
   const payload = wrapped ? rows.slice(1, -1) : rows;
   const tokens = payload.map((raw, index) => ({

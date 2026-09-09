@@ -5,21 +5,29 @@ import type { PatchFileSystem } from "./filesystem.js";
 /** A source line is an offset range, not a normalized copy of its contents. */
 class Source {
   readonly offsets: number[] = [0];
-  constructor(readonly text: string) {
-    for (let at = text.indexOf("\n"); at !== -1; at = text.indexOf("\n", at + 1)) {
-      this.offsets.push(at + 1);
+  readonly text: string;
+  readonly bom: string;
+  constructor(original: string) {
+    this.bom = original.startsWith("\uFEFF") ? "\uFEFF" : "";
+    this.text = original.slice(this.bom.length);
+    for (const match of this.text.matchAll(/\r\n|\n\r|\r|\n/g)) {
+      this.offsets.push(match.index! + match[0].length);
     }
-    if (text && !text.endsWith("\n")) this.offsets.push(text.length);
+    if (this.offsets.at(-1) !== this.text.length) this.offsets.push(this.text.length);
   }
   get size(): number { return this.offsets.length - 1; }
   raw(index: number): string { return this.text.slice(this.offsets[index], this.offsets[index + 1]); }
   ending(index: number): string {
     const end = this.offsets[index + 1];
-    return this.text[end - 1] !== "\n" ? "" : this.text[end - 2] === "\r" ? "\r\n" : "\n";
+    const last = this.text[end - 1];
+    if (last !== "\r" && last !== "\n") return "";
+    const previous = this.text[end - 2];
+    return end - this.offsets[index] >= 2 && (previous === "\r" || previous === "\n") && previous !== last
+      ? previous + last : last;
   }
   matchText(index: number): string {
     const raw = this.raw(index);
-    return raw.endsWith("\n") ? raw.slice(0, -1) : raw;
+    return raw.slice(0, raw.length - this.ending(index).length);
   }
 }
 
@@ -96,7 +104,6 @@ function compile(source: Source, blocks: EditBlock[], path: string): Change[] {
     const expected = block.lines.filter(line => line.kind !== "insert").map(line => line.text);
     let consumed = expected.length;
     let position: number | undefined;
-    let shortened = false;
     if (consumed === 0) {
       const append = source.size && source.raw(source.size - 1) === source.ending(source.size - 1) ? source.size - 1 : source.size;
       position = block.anchor === undefined ? append : cursor;
@@ -104,7 +111,6 @@ function compile(source: Source, blocks: EditBlock[], path: string): Change[] {
       position = locate(source, expected, cursor, block.atEnd, path);
       if (position === undefined && expected[consumed - 1] === "") {
         consumed--;
-        shortened = true;
         position = locate(source, expected.slice(0, consumed), cursor, block.atEnd, path);
       }
       if (position === undefined) throw new Error(`Failed to find expected lines in ${path}`);
@@ -112,16 +118,13 @@ function compile(source: Source, blocks: EditBlock[], path: string): Change[] {
     }
     const output: Token[] = [];
     let input = 0;
-    // A missing final empty context line has no source bytes to retain. The
-    // format also tolerates an empty last replacement line in this case.
-    let lastOutput = block.lines.length - 1;
-    while (lastOutput >= 0 && block.lines[lastOutput].kind === "remove") lastOutput--;
-    for (const [index, line] of block.lines.entries()) {
-      const omit = shortened && index === lastOutput && line.text === "";
+    // Missing final empty context has no source bytes. Explicit insertions,
+    // including empty lines, always remain part of the requested output.
+    for (const line of block.lines) {
       if (line.kind === "insert") {
-        if (!omit) output.push(line.text);
+        output.push(line.text);
       } else {
-        if (line.kind === "keep" && input < consumed && !omit) output.push(position + input);
+        if (line.kind === "keep" && input < consumed) output.push(position + input);
         input++;
       }
     }
@@ -144,15 +147,6 @@ function render(source: Source, changes: Change[]): string {
     );
   }
   const finalEnding = source.size ? source.ending(source.size - 1) : "";
-  // Discard generated empty tail lines only for an unterminated original.
-  if (!finalEnding) {
-    while (pieces.length) {
-      const tail = pieces.at(-1)!;
-      while (tail.count && tail.inserted?.[tail.first + tail.count - 1] === "") tail.count--;
-      if (tail.count) break;
-      pieces.pop();
-    }
-  }
   const size = pieces.reduce((total, piece) => total + piece.count, 0);
   let emitted = 0;
   let inherited = source.size ? source.ending(0) || "\n" : "\n";
@@ -163,12 +157,13 @@ function render(source: Source, changes: Change[]): string {
       const ending = typeof token === "number" ? source.ending(token) : "";
       const raw = typeof token === "number" ? source.raw(token) : token;
       const text = raw.slice(0, raw.length - ending.length);
-      const chosen = ++emitted === size ? finalEnding : ending || inherited;
+      const explicitEmpty = typeof token === "string" && token === "";
+      const chosen = ++emitted === size ? finalEnding || (explicitEmpty ? inherited : "") : ending || inherited;
       if (chosen) inherited = chosen;
       output.push(text + chosen);
     }
   }
-  return output.join("");
+  return source.bom + output.join("");
 }
 
 export type PatchResult = { text: string; added: string[]; modified: string[]; deleted: string[] };

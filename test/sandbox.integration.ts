@@ -43,6 +43,10 @@ test('stable SDK uses the existing Docker sandbox for patch operations and enfor
   await tool.execute('preserve', { input: wrap('*** Update File: preserved\n@@\n keep\n-old\n+new\n tail') });
   assert.deepEqual(await active.fsBridge.readFile({ filePath: `${active.containerWorkdir}/preserved` }),
     Buffer.from('  keep \t\r\nnew\r\ntail'));
+  await active.fsBridge.writeFile({ filePath: `${active.containerWorkdir}/logical`, data: '\uFEFFhead\n\rold' });
+  await tool.execute('logical-endings', { input: wrap('*** Update File: logical\n@@\n+before\n head\n-old\n+new\n+') });
+  assert.deepEqual(await active.fsBridge.readFile({ filePath: `${active.containerWorkdir}/logical` }),
+    Buffer.from('\uFEFFbefore\n\rhead\n\rnew\n\r\n\r'));
   await active.fsBridge.mkdirp({ filePath: `${active.containerWorkdir}/allowed` });
   await active.fsBridge.writeFile({ filePath: `${active.containerWorkdir}/outside/keep`, data: 'unchanged', mkdir: true });
   execFileSync('docker', ['exec', active.runtimeId, 'ln', '-s', '../outside', `${active.containerWorkdir}/allowed/link`]);

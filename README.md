@@ -79,7 +79,8 @@ approval/environment machinery.
 
 Patch behavior:
 
-- Match exact lines first, then tolerate trailing whitespace, surrounding
+- Match logical text independently of LF, CR, CRLF, or LFCR terminators.
+  Match exact lines first, then tolerate trailing whitespace, surrounding
   whitespace, and common Unicode punctuation differences. At the first tolerance
   level with any matches, require exactly one candidate in the search region;
   multiple matches are an error, not permission to try a weaker tolerance.
@@ -104,8 +105,15 @@ Patch behavior:
   there is no ending to inherit.
 - The new last line inherits the original last line's ending, including no ending.
   This also applies when deleting the last line exposes a context or untouched line.
-  Updates and moves do not manufacture trailing blank lines for unterminated sources.
-  Empty updated files remain empty; newly added files use LF with a final newline.
+  Explicit inserted empty lines are always retained, including at EOF. A final
+  inserted empty line receives an inferred terminator when needed to represent it,
+  overriding an absent original final newline. Ordinary nonempty replacements
+  still preserve an absent final newline. Newly added files use LF.
+- A leading UTF-8 BOM is file metadata, excluded from matching and preserved once
+  at the start of updated or moved files. Inserting before the first line moves
+  the BOM to the new beginning; deleting all text leaves a BOM-only file if one
+  was present. Interior U+FEFF characters remain text. `Delete File` still removes
+  the entire file, including its BOM.
 
 OpenClaw-specific adaptation:
 
