@@ -62,6 +62,10 @@ jobs:
         run: npm pack --ignore-scripts
       - name: Validate package publication without publishing
         run: npm publish ./lastguru-net-openclaw-better-patch-*.tgz --dry-run --tag "${{ steps.release.outputs.tag }}"
+        env:
+          NODE_AUTH_TOKEN: ${{secrets.npm_token}}
       - name: Publish to npm
         if: github.event_name == 'release'
         run: npm publish ./lastguru-net-openclaw-better-patch-*.tgz --tag "${{ steps.release.outputs.tag }}"
+        env:
+          NODE_AUTH_TOKEN: ${{secrets.npm_token}}
