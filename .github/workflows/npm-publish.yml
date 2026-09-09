@@ -1,0 +1,67 @@
+name: npm publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Install dependencies
+        run: npm ci
+      - name: Build and test
+        run: npm run check
+      - name: Check release metadata
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { readFileSync, appendFileSync } from 'node:fs';
+          import plugin from './dist/index.js';
+          const read = path => JSON.parse(readFileSync(path, 'utf8'));
+          const pkg = read('package.json');
+          const lock = read('package-lock.json');
+          assert.equal(read('openclaw.plugin.json').version, pkg.version, 'Plugin manifest version mismatch');
+          assert.equal(plugin.version, pkg.version, 'Runtime plugin version mismatch');
+          assert.equal(lock.version, pkg.version, 'Lockfile version mismatch');
+          assert.equal(lock.packages[''].version, pkg.version, 'Lockfile root version mismatch');
+          const prerelease = pkg.version.includes('-');
+          if (process.env.GITHUB_EVENT_NAME === 'release') {
+            assert.equal(process.env.RELEASE_TAG, `v${pkg.version}`, 'Release tag must match package version');
+            assert.equal(process.env.RELEASE_PRERELEASE, String(prerelease), 'Release prerelease flag must match package version');
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT, `tag=${prerelease ? 'next' : 'latest'}\n`);
+          JS
+      - name: Test Docker sandbox integration
+        run: |
+          docker pull python:3.12-slim
+          sudo env "PATH=$PATH" node --import tsx --test test/sandbox.integration.ts
+      - name: Pack
+        run: npm pack --ignore-scripts
+      - name: Validate package publication without publishing
+        run: npm publish ./lastguru-net-openclaw-better-patch-*.tgz --dry-run --tag "${{ steps.release.outputs.tag }}"
+      - name: Publish to npm
+        if: github.event_name == 'release'
+        run: npm publish ./lastguru-net-openclaw-better-patch-*.tgz --tag "${{ steps.release.outputs.tag }}"

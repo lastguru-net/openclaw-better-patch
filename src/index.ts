@@ -41,7 +41,7 @@ export function createBetterPatchTool(ctx: OpenClawPluginToolContext, resolveSan
 export default {
   id: "better-patch",
   name: "Better Patch",
-  description: "Codex-style patch editing without a Codex dependency",
+  description: "File patching for OpenClaw with dependency-aware validation and source-preserving edits",
   version: "0.1.0",
   register(api) {
     api.registerTool(ctx => createBetterPatchTool(ctx, sandboxResolver(api)), { name: "better_patch" });

@@ -197,6 +197,36 @@ representative text preservation, path/mount boundaries, host isolation and read
 policy. Regular tests do not need Docker. Other sandbox backends share the bridge
 interface but are not integration-tested here.
 
+## Publishing to npm
+
+The `npm-publish.yml` GitHub Actions workflow publishes when a GitHub release is
+published. A manual **Run workflow** executes validation only, including build,
+regular tests, Docker integration, package metadata checks and `npm publish --dry-run`.
+It does not publish a package.
+
+For a release, keep the version in `package.json`, `package-lock.json`,
+`openclaw.plugin.json` and the plugin definition in `src/index.ts` aligned. Commit
+those changes, then publish a GitHub release tagged `v<version>`. Stable versions
+publish to npm's `latest` tag. Versions with a prerelease suffix must use a GitHub
+prerelease and publish to `next`. The workflow publishes the same tarball it validates.
+
+Authentication uses [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/)
+on GitHub-hosted runners. In the npm package's Trusted Publisher settings, configure:
+
+- Provider: GitHub Actions
+- Organization or user: `lastguru-net`
+- Repository: `openclaw-better-patch`
+- Workflow filename: `npm-publish.yml`
+- Environment: leave empty
+- Allowed action: enable direct `npm publish`
+
+No npm token is needed in repository secrets. npm generates provenance for trusted
+publishing from this public repository. For a new package, establish the package
+under the intended npm account/scope before configuring its package-level trusted
+publisher. A maintainer can do the initial publication from a checked checkout using
+`npm login`, `npm run check`, `npm pack`, and `npm publish <tarball> --access public`.
+Publishing requires permission for the `@lastguru-net` scope.
+
 ## License
 
 Original plugin code and project contributions use [MIT](LICENSE). OpenAI scenario
