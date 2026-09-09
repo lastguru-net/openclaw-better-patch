@@ -82,13 +82,16 @@ Patch behavior:
 - Update sources must be valid UTF-8. Adds may overwrite arbitrary bytes.
 - Deletion does not read or decode contents, so binary files can be removed.
   Successful deletions, including missing-path no-ops, are reported with `D`.
-- Context lines retain their exact source text and line endings, even when matched
-  using whitespace or punctuation tolerance. Untouched lines are also preserved.
-- Added/replacement lines use LF. Updates and moves do not add an EOF terminator
-  or trailing blank lines when the source lacks a final newline. Appending text
-  still inserts the separator needed after an unterminated source line. Deleting
-  a final line can expose an existing context line's terminator; that terminator
-  is preserved, not newly inserted. New files use LF with a final newline.
+- Context and untouched lines retain their source text and line endings, even
+  with tolerant matching, except when a line becomes or ceases to be the last line.
+- Added/replacement lines inherit the preceding output line's ending. At the start
+  of the file, they use the original first line's ending. Appending after an
+  unterminated line uses the nearest preceding ending. LF is the fallback when
+  there is no ending to inherit.
+- The new last line inherits the original last line's ending, including no ending.
+  This also applies when deleting the last line exposes a context or untouched line.
+  Updates and moves do not manufacture trailing blank lines for unterminated sources.
+  Empty updated files remain empty; newly added files use LF with a final newline.
 
 OpenClaw-specific adaptation:
 

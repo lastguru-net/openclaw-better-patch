@@ -142,10 +142,10 @@ test("an end-of-file marker selects the final repeated match", async () => inTem
   assert.equal(await readFile(join(cwd, "tail.txt"), "utf8"), "same\nmiddle\nlast\n");
 }));
 
-test("replacement lines use LF while untouched CRLF lines retain their endings", async () => inTemp(async (cwd) => {
+test("replacement lines inherit the original first line ending", async () => inTemp(async (cwd) => {
   await writeFile(join(cwd, "crlf.txt"), Buffer.from("one\r\ntwo\r\n"));
   await applyPatch(wrap("*** Update File: crlf.txt\n@@\n-one\n+uno"), cwd);
-  assert.deepEqual(await readFile(join(cwd, "crlf.txt")), Buffer.from("uno\ntwo\r\n"));
+  assert.deepEqual(await readFile(join(cwd, "crlf.txt")), Buffer.from("uno\r\ntwo\r\n"));
 }));
 
 test("standalone application allows repeated source paths and reports each operation", async () => inTemp(async (cwd) => {
@@ -223,27 +223,50 @@ test("native verification applies valid operations and groups the A/M/D summary"
 
 
 const preservationCases = [
+  { name: "multiple added lines inherit previous replacement ending", source: "first\r\nold\nlast\r\n",
+    body: " first\n-old\n+one\n+two\n last", expected: "first\r\none\r\ntwo\r\nlast\r\n" },
+  { name: "first-line insertion uses original first ending", source: "first\r\nlast\n",
+    body: "+one\n+two\n first", expected: "one\r\ntwo\r\nfirst\r\nlast\n" },
+  { name: "whole-file replacement uses first ending then original EOF ending", source: "first\r\nlast\n",
+    body: "-first\n-last\n+one\n+two\n+three", expected: "one\r\ntwo\r\nthree\n" },
+  { name: "single-line replacement uses original EOF ending", source: "first\r\nlast\n",
+    body: "-first\n-last\n+one", expected: "one\n" },
+  { name: "append to unterminated CRLF source uses preceding source ending", source: "first\r\nlast",
+    body: " last\n+one\n+two", expected: "first\r\nlast\r\none\r\ntwo" },
+  { name: "pure insertion at unterminated CRLF EOF", source: "first\r\nlast",
+    body: "+one\n+two", expected: "first\r\nlast\r\none\r\ntwo" },
+  { name: "mixed EOF append uses nearest preceding ending", source: "first\r\nsecond\nlast",
+    body: " last\n+one\n+two", expected: "first\r\nsecond\nlast\none\ntwo" },
+  { name: "delete last line transfers CRLF EOF ending to context", source: "keep\nold\r\n",
+    body: " keep\n-old", expected: "keep\r\n" },
+  { name: "delete last line transfers LF EOF ending to untouched line", source: "keep\r\nold\n",
+    body: "-old", expected: "keep\n" },
+  { name: "single unterminated line expansion defaults to LF", source: "old",
+    body: "-old\n+one\n+two", expected: "one\ntwo" },
+  { name: "delete all terminated lines produces empty file", source: "old\r\n",
+    body: "-old", expected: "" },
+
   { name: "exact mixed-ending context and trailing blank lines", source: "before\r\nold\nlast\r\n\r\n",
-    body: " before\n-old\n+new\n last", expected: "before\r\nnew\nlast\r\n\r\n" },
+    body: " before\n-old\n+new\n last", expected: "before\r\nnew\r\nlast\r\n\r\n" },
   { name: "trailing-whitespace context", source: "keep \t\r\nold\n",
     body: " keep\n-old\n+new", expected: "keep \t\r\nnew\n" },
   { name: "surrounding-whitespace context and interleaved edits", source: "  keep\t\r\nold\n  tail \n",
-    body: "+first\n keep\n-old\n+new\n tail\n+last", expected: "first\n  keep\t\r\nnew\n  tail \nlast\n" },
+    body: "+first\n keep\n-old\n+new\n tail\n+last", expected: "first\r\n  keep\t\r\nnew\r\n  tail \nlast\n" },
   { name: "Unicode-tolerant context", source: "\ufeffheading\r\n\u201chello\u201d\u00a0\u2013\u00a0world\r\nold\n",
     body: ' "hello" - world\n-old\n+new', expected: "\ufeffheading\r\n\u201chello\u201d\u00a0\u2013\u00a0world\r\nnew\n" },
   { name: "unterminated replacement", source: "old", body: "-old\n+new", expected: "new" },
   { name: "unterminated context-only update", source: "  keep \t", body: " keep", expected: "  keep \t" },
-  { name: "unterminated tail context", source: "old\r\n  tail \t", body: "-old\n+new\n tail", expected: "new\n  tail \t" },
+  { name: "unterminated tail context", source: "old\r\n  tail \t", body: "-old\n+new\n tail", expected: "new\r\n  tail \t" },
   { name: "append after unterminated context", source: "keep", body: " keep\n+new", expected: "keep\nnew" },
   { name: "insertion-only append without EOF newline", source: "keep", body: "+new", expected: "keep\nnew" },
   { name: "empty source insertion", source: "", body: "+new", expected: "new" },
   { name: "no manufactured trailing blank lines", source: "old", body: "-old\n+new\n+\n+", expected: "new" },
   { name: "delete entire unterminated file", source: "old", body: "-old", expected: "" },
-  { name: "delete last line preserves existing context terminator", source: "keep\r\nold", body: " keep\n-old", expected: "keep\r\n" },
+  { name: "delete last line transfers absent EOF ending to context", source: "keep\r\nold", body: " keep\n-old", expected: "keep" },
   { name: "EOF matching and omitted empty context", source: "old", body: "-old\n+new\n \n*** End of File", expected: "new" },
   { name: "omitted empty context before addition", source: "old", body: "-old\n \n+new", expected: "new" },
   { name: "multiple chunks preserve separate source context", source: "  a\r\nold\n  b\r\nlast",
-    body: " a\n-old\n+new\n@@\n b\n-last\n+end", expected: "  a\r\nnew\n  b\r\nend" },
+    body: " a\n-old\n+new\n@@\n b\n-last\n+end", expected: "  a\r\nnew\r\n  b\r\nend" },
 ];
 for (const scenario of preservationCases) {
   test(`preserves source: ${scenario.name}`, async () => inTemp(async (cwd) => {

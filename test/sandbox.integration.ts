@@ -42,7 +42,7 @@ test('stable SDK uses the existing Docker sandbox for patch operations and enfor
   await active.fsBridge.writeFile({ filePath: `${active.containerWorkdir}/preserved`, data: '  keep \t\r\nold\r\ntail' });
   await tool.execute('preserve', { input: wrap('*** Update File: preserved\n@@\n keep\n-old\n+new\n tail') });
   assert.deepEqual(await active.fsBridge.readFile({ filePath: `${active.containerWorkdir}/preserved` }),
-    Buffer.from('  keep \t\r\nnew\ntail'));
+    Buffer.from('  keep \t\r\nnew\r\ntail'));
   await tool.execute('delete', { input: wrap('*** Delete File: moved/file') });
   await assert.rejects(readFile(join(workspace, 'moved/file')), { code: 'ENOENT' });
   await active.fsBridge.writeFile({ filePath: `${active.containerWorkdir}/binary`, data: Buffer.from([0xff, 0xfe]) });

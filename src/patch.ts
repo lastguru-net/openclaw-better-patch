@@ -23,7 +23,7 @@ function seek(lines: string[], pattern: string[], start: number, eof: boolean): 
 function update(contents: string, chunks: Chunk[], path: string): string {
   const lines = contents.split("\n");
   if (lines.at(-1) === "") lines.pop();
-  // Keep source terminators separate from patch-created LF lines. Matching still
+  // Keep source terminators separate from added lines. Matching still
   // uses the same logical lines and tolerance tiers as before.
   type Line = { text: string; ending: string; added: boolean };
   const source: Line[] = lines.map((text, i) => {
@@ -32,7 +32,7 @@ function update(contents: string, chunks: Chunk[], path: string): string {
       ? { text: text.slice(0, -1), ending: "\r\n", added: false }
       : { text, ending: terminated ? "\n" : "", added: false };
   });
-  const added = (text: string): Line => ({ text, ending: "\n", added: true });
+  const added = (text: string): Line => ({ text, ending: "", added: true });
   const replacements: { start: number; count: number; lines: Line[] }[] = [];
   let cursor = 0;
   for (const chunk of chunks) {
@@ -68,13 +68,20 @@ function update(contents: string, chunks: Chunk[], path: string): string {
   for (const replacement of replacements.reverse()) {
     result = result.slice(0, replacement.start).concat(replacement.lines, result.slice(replacement.start + replacement.count));
   }
-  if (!contents.endsWith("\n")) {
-    // Do not manufacture EOF blank lines or a final terminator. Existing source
-    // terminators are retained, including one exposed by deleting the last line.
+  const finalEnding = source.at(-1)?.ending ?? "";
+  if (!finalEnding) {
+    // Do not manufacture trailing blank lines for an unterminated source.
     while (result.at(-1)?.added && result.at(-1)!.text === "") result.pop();
-    if (result.at(-1)?.added) result[result.length - 1] = { ...result.at(-1)!, ending: "" };
   }
-  return result.map((line, i) => line.text + (line.ending || (i < result.length - 1 ? "\n" : ""))).join("");
+  // Infer endings in final output order, not chunk order. An unterminated
+  // source line moved away from EOF needs the preceding line's separator too.
+  let previousEnding = source[0]?.ending || "\n";
+  return result.map((line, i) => {
+    const ending = i === result.length - 1 ? finalEnding
+      : line.added || !line.ending ? previousEnding : line.ending;
+    if (ending) previousEnding = ending;
+    return line.text + ending;
+  }).join("");
 }
 
 export type PatchResult = { text: string; added: string[]; modified: string[]; deleted: string[] };
