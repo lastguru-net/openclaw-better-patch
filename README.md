@@ -56,6 +56,9 @@ Patch syntax supports multiple files, adds, deletes, updates, and moves:
 - Update with `*** Update File: path`, optionally followed by `*** Move to: path`.
 - Prefix update lines with a space for context, `-` for removal, or `+` for addition.
 - Separate chunks with `@@`; use `@@ context text` to locate a later section.
+  An insertion-only chunk with a textual anchor inserts immediately after that
+  matched source line. Without a textual anchor, insertion-only chunks append at
+  the file ending (before an existing trailing blank line).
 - Use `*** End of File` after a chunk to match the file's ending.
 
 Success returns `Success. Updated the following files:` followed by `A`, `M`, and

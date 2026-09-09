@@ -337,3 +337,39 @@ for (const scenario of [
     assert.equal(await readFile(path, "utf8"), scenario.source);
   }));
 }
+
+
+for (const scenario of [
+  { name: "middle anchor with tolerant matching and CRLF inheritance", source: "before\n  anchor \t\r\nafter",
+    body: "@@ anchor\n+one\n+two", expected: "before\n  anchor \t\r\none\r\ntwo\r\nafter" },
+  { name: "first-line anchor", source: "anchor\nlast\n",
+    body: "@@ anchor\n+inserted", expected: "anchor\ninserted\nlast\n" },
+  { name: "unterminated last-line anchor", source: "first\r\nanchor",
+    body: "@@ anchor\n+inserted", expected: "first\r\nanchor\r\ninserted" },
+  { name: "multiple anchors keep source positions", source: "first\nsecond\nlast\n",
+    body: "@@ first\n+one\n@@ second\n+two", expected: "first\none\nsecond\ntwo\nlast\n" },
+  { name: "following update at the insertion cursor", source: "anchor\nold\nlast\n",
+    body: "@@ anchor\n+inserted\n@@\n-old\n+new", expected: "anchor\ninserted\nnew\nlast\n" },
+]) {
+  test(`insertion-only chunk respects ${scenario.name}`, async () => inTemp(async cwd => {
+    const path = join(cwd, "source.txt");
+    await writeFile(path, scenario.source);
+    await applyVerifiedPatch(wrap(`*** Update File: source.txt\n${scenario.body}`), cwd);
+    assert.equal(await readFile(path, "utf8"), scenario.expected);
+  }));
+}
+
+for (const scenario of [
+  { name: "missing", source: "other\n", error: /Failed to find context/ },
+  { name: "ambiguous", source: "anchor\nanchor\n", error: /Ambiguous match/ },
+]) {
+  test(`insertion-only chunk rejects a ${scenario.name} anchor before writes`, async () => inTemp(async cwd => {
+    const path = join(cwd, "source.txt");
+    await writeFile(path, scenario.source);
+    await assert.rejects(applyVerifiedPatch(wrap(
+      "*** Add File: new.txt\n+new\n*** Update File: source.txt\n@@ anchor\n+inserted",
+    ), cwd), scenario.error);
+    assert.equal(await readFile(path, "utf8"), scenario.source);
+    await assert.rejects(readFile(join(cwd, "new.txt")), { code: "ENOENT" });
+  }));
+}

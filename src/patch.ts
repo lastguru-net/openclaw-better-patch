@@ -56,8 +56,9 @@ function update(contents: string, chunks: Chunk[], path: string): string {
       cursor = found + 1;
     }
     if (!chunk.old.length) {
-      replacements.push({ start: lines.at(-1) === "" ? lines.length - 1 : lines.length,
-        count: 0, lines: chunk.replacement.map(added) });
+      const start = chunk.context !== undefined ? cursor
+        : lines.at(-1) === "" ? lines.length - 1 : lines.length;
+      replacements.push({ start, count: 0, lines: chunk.replacement.map(added) });
       continue;
     }
     let pattern = chunk.old;
