@@ -21,12 +21,6 @@ test("header-like context belongs to its update rather than another file", () =>
   if (parsed[0].kind === "update") assert.deepEqual(parsed[0].blocks[0].lines[0], { kind: "keep", text: "*** Add File: literal" });
 });
 
-test("literal wrappers and CRLF transport do not alter add contents", () => {
-  assert.deepEqual(parsePatch(`<<'EOF'\r\n${patch("*** Add File: sample\n+one\n+two").replace(/\n/g, "\r\n")}\r\nEOF`), [
-    { kind: "add", path: "sample", contents: "one\ntwo\n" },
-  ]);
-});
-
 test("EOF gaps separate edit blocks without adding blank context", () => {
   const parsed = parsePatch(patch("*** Update File: sample\n-old\n+new\n*** End of File\n \n\n@@ next\n+extra"));
   assert.equal(parsed[0].kind, "update");

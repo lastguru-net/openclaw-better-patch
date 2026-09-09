@@ -1,4 +1,4 @@
-// Better Patch implementation redesign. Project provenance and license: see NOTICE.
+// Project provenance and license: see NOTICE.
 import { parsePatch, type EditBlock, type FileEdit } from "./parser.js";
 import type { PatchFileSystem } from "./filesystem.js";
 import { preflightFileSystem } from "./preflight.js";
@@ -80,19 +80,6 @@ type Token = number | string;
 type Piece = { first: number; count: number; inserted?: Token[] };
 type Change = { position: number; consumed: number; output: Token[] };
 
-function portion(pieces: Piece[], from: number, to = Infinity): Piece[] {
-  const selection: Piece[] = [];
-  let position = 0;
-  for (const piece of pieces) {
-    const skip = Math.max(0, from - position);
-    const count = Math.min(piece.count, to - position) - skip;
-    if (count > 0) selection.push({ ...piece, first: piece.first + skip, count });
-    position += piece.count;
-    if (position >= to) break;
-  }
-  return selection;
-}
-
 function compile(source: Source, blocks: EditBlock[], path: string): Change[] {
   const changes: Change[] = [];
   let cursor = 0;
@@ -131,8 +118,9 @@ function compile(source: Source, blocks: EditBlock[], path: string): Change[] {
     }
     changes.push({ position, consumed, output });
   }
+  changes.sort((a, b) => a.position - b.position);
   let consumedUntil = 0;
-  for (const change of [...changes].sort((a, b) => a.position - b.position)) {
+  for (const change of changes) {
     if (change.position < consumedUntil) throw new Error(`Overlapping chunks in ${path}`);
     consumedUntil = change.position + change.consumed;
   }
@@ -140,13 +128,14 @@ function compile(source: Source, blocks: EditBlock[], path: string): Change[] {
 }
 
 function render(source: Source, changes: Change[]): string {
-  let pieces: Piece[] = [{ first: 0, count: source.size }];
-  for (const change of changes.sort((a, b) => a.position - b.position).reverse()) {
-    pieces = portion(pieces, 0, change.position).concat(
-      { first: 0, count: change.output.length, inserted: change.output },
-      portion(pieces, change.position + change.consumed),
-    );
+  const pieces: Piece[] = [];
+  let cursor = 0;
+  for (const change of changes) {
+    if (change.position > cursor) pieces.push({ first: cursor, count: change.position - cursor });
+    pieces.push({ first: 0, count: change.output.length, inserted: change.output });
+    cursor = change.position + change.consumed;
   }
+  if (cursor < source.size) pieces.push({ first: cursor, count: source.size - cursor });
   const finalEnding = source.size ? source.ending(source.size - 1) : "";
   const size = pieces.reduce((total, piece) => total + piece.count, 0);
   let emitted = 0;
@@ -168,20 +157,18 @@ function render(source: Source, changes: Change[]): string {
 }
 
 export type PatchResult = { text: string; added: string[]; modified: string[]; deleted: string[]; unchanged: string[] };
-type Target = { edit: FileEdit; source: string };
 const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
 const equal = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((value, i) => value === b[i]);
 
-async function revised(target: Target, fs: PatchFileSystem): Promise<{ original: Uint8Array; content: string }> {
+async function revised(source: string, blocks: EditBlock[], fs: PatchFileSystem): Promise<{ original: Uint8Array; content: string }> {
   let original: Uint8Array;
   let text: string;
   try {
-    original = await fs.read(target.source);
+    original = await fs.read(source);
     text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(original);
-  } catch (cause) { throw new Error(`Failed to read file to update ${target.source}: ${(cause as Error).message}`, { cause }); }
-  if (target.edit.kind !== "update") throw new Error("Expected an update operation");
+  } catch (cause) { throw new Error(`Failed to read file to update ${source}: ${(cause as Error).message}`, { cause }); }
   const document = new Source(text);
-  return { original, content: render(document, compile(document, target.edit.blocks, target.source)) };
+  return { original, content: render(document, compile(document, blocks, source)) };
 }
 
 async function perform(edit: FileEdit, cwd: string, fs: PatchFileSystem): Promise<boolean> {
@@ -196,7 +183,7 @@ async function perform(edit: FileEdit, cwd: string, fs: PatchFileSystem): Promis
     if (info?.kind === "file" && equal(await fs.read(source), bytes(edit.contents))) return false;
     await fs.write(source, edit.contents, true);
   } else {
-    const { original, content } = await revised({ edit, source }, fs);
+    const { original, content } = await revised(source, edit.blocks, fs);
     const destination = edit.destination === undefined ? source : fs.resolve(cwd, edit.destination);
     await fs.checkPath(destination);
     if (destination === source && equal(original, bytes(content))) return false;
@@ -247,8 +234,10 @@ async function execute(input: string, cwd: string, fs: PatchFileSystem, prefligh
     const after = await fs.inspect(path);
     if (!before && after) result.added.push(spec.label);
     else if (before && !after) result.deleted.push(spec.label);
-    else if (!mutated.has(path) && before?.kind === after?.kind || !before && !after || before?.kind === "directory" && after?.kind === "directory"
-      || before?.data && after?.kind === "file" && equal(before.data, await fs.read(path))) result.unchanged.push(spec.label);
+    else if (!before && !after) result.unchanged.push(spec.label);
+    else if (!mutated.has(path) && before?.kind === after?.kind) result.unchanged.push(spec.label);
+    else if (before?.kind === "directory" && after?.kind === "directory") result.unchanged.push(spec.label);
+    else if (before?.data && after?.kind === "file" && equal(before.data, await fs.read(path))) result.unchanged.push(spec.label);
     else result.modified.push(spec.label);
   }
   result.text = result.added.length || result.modified.length || result.deleted.length

@@ -85,3 +85,30 @@ test('sandbox workspace metadata does not stat outside the mount root', async ()
   const files = sandboxFileSystem(fixture.context, undefined, '/host');
   assert.deepEqual(await files.inspect('/workspace'), { kind: 'directory' });
 });
+
+test('sandbox removal confirms absence but retains errors for existing or unknown paths', async () => {
+  const fixture = sandbox();
+  const denied = new Error('remove denied');
+  fixture.context.fsBridge.remove = async () => { throw denied; };
+  fixture.context.fsBridge.stat = async ({ filePath }: { filePath: string }) => {
+    if (filePath === '/workspace/missing') return null;
+    if (filePath === '/workspace/existing') return { type: 'file' };
+    throw new Error('stat unavailable');
+  };
+  const files = sandboxFileSystem(fixture.context);
+  await files.remove('/workspace/missing/child');
+  await assert.rejects(files.remove('/workspace/existing'), error => error === denied);
+  await assert.rejects(files.remove('/workspace/unknown'), error => error === denied);
+});
+
+test('sandbox metadata retains unknown nonregular entries and cancellation during probing', async () => {
+  const fixture = sandbox();
+  fixture.context.fsBridge.stat = async () => { throw new Error('guard', { cause: { code: 'not-file' } }); };
+  assert.deepEqual(await sandboxFileSystem(fixture.context).inspect('/workspace/entry'), { kind: 'other' });
+  const controller = new AbortController();
+  fixture.context.fsBridge.stat = async ({ filePath }: { filePath: string }) => {
+    if (filePath === '/workspace') { controller.abort(); return null; }
+    throw new Error('missing parent');
+  };
+  await assert.rejects(sandboxFileSystem(fixture.context, controller.signal).inspect('/workspace/file'), { name: 'AbortError' });
+});

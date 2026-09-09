@@ -1,5 +1,4 @@
-// Project parser redesign retaining the patch-language compatibility contract.
-// The project originated as a Codex adaptation; see NOTICE for provenance.
+// Project provenance and license: see NOTICE.
 export type EditLine = { kind: "keep" | "insert" | "remove"; text: string };
 export type EditBlock = { anchor?: string; atEnd: boolean; lines: EditLine[] };
 export type FileEdit =

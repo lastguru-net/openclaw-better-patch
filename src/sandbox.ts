@@ -61,6 +61,18 @@ export function sandboxFileSystem(sandbox: Sandbox, signal?: AbortSignal, allowe
     signal?.throwIfAborted();
     if (sandbox.workspaceAccess === "ro") throw new Error("Sandbox workspace is read-only");
   };
+  // A missing entry or ancestor confirms absence. Stat errors alone do not.
+  async function missing(probe: string): Promise<boolean> {
+    for (;;) {
+      signal?.throwIfAborted();
+      const info = await bridge!.stat({ filePath: probe, signal }).catch(() => undefined);
+      signal?.throwIfAborted();
+      if (info !== undefined) return info === null;
+      const parent = posix.dirname(probe);
+      if (parent === probe) return false;
+      probe = parent;
+    }
+  }
   return {
     resolve: (cwd, path) => bridge.resolvePath({ filePath: path, cwd }).containerPath,
     async checkPath(path) {
@@ -81,17 +93,8 @@ export function sandboxFileSystem(sandbox: Sandbox, signal?: AbortSignal, allowe
         // Some bridge builds reject existing nonregular entries during stat's
         // preliminary file guard. Preserve existence without assuming a type.
         if ((error as { cause?: { code?: string } }).cause?.code === "not-file") return { kind: "other" };
-        // A missing parent can make stat throw rather than return null. Only
-        // an explicitly absent ancestor establishes absence; retain all other errors.
-        for (let probe = posix.dirname(path); ;) {
-          signal?.throwIfAborted();
-          const info = await bridge.stat({ filePath: probe, signal }).catch(() => undefined);
-          if (info === null) return null;
-          if (info !== undefined) throw error;
-          const parent = posix.dirname(probe);
-          if (parent === probe) throw error;
-          probe = parent;
-        }
+        if (await missing(posix.dirname(path))) return null;
+        throw error;
       }
     },
     async write(path, contents, createParents) {
@@ -102,19 +105,7 @@ export function sandboxFileSystem(sandbox: Sandbox, signal?: AbortSignal, allowe
       writable();
       try { await bridge.remove({ filePath: path, recursive: false, force: true, signal }); }
       catch (error) {
-        signal?.throwIfAborted();
-        // Some bridges cannot remove or stat a path with missing parents.
-        // Walk upward only on stat errors; a confirmed missing ancestor is
-        // sufficient, but an existing entry or no confirmation preserves error.
-        for (let probe = path; ;) {
-          signal?.throwIfAborted();
-          const info = await bridge.stat({ filePath: probe, signal }).catch(() => undefined);
-          if (info === null) return;
-          if (info !== undefined) throw error;
-          const parent = posix.dirname(probe);
-          if (parent === probe) throw error;
-          probe = parent;
-        }
+        if (!await missing(path)) throw error;
       }
     },
   };

@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, readFile, rm, mkdir, symlink, lstat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
+import { wrap } from './helpers.js';
 import { hostFileSystem } from '../src/host.js';
 import { applyVerifiedPatch } from '../src/patch.js';
-const wrap = (body: string) => `*** Begin Patch\n${body}\n*** End Patch`;
 const add = (path: string, text: string) => `*** Add File: ${path}\n+${text}`;
 const update = (path: string, old: string, text: string) => `*** Update File: ${path}\n@@\n-${old}\n+${text}`;
-async function setup(t: any) {
+async function setup(t: TestContext) {
   const dir = await mkdtemp(join(tmpdir(), 'patch-dependencies-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const base = await hostFileSystem(dir, dir);

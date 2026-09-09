@@ -60,9 +60,12 @@ export function preflightFileSystem(base: PatchFileSystem): PatchFileSystem {
       const entry = await inspect(path);
       if (entry?.kind === 'directory') {
         // Without SDK listing, actual nonrecursive removal remains authoritative.
-        if ((entry.fresh || base.list) && (await list(path)).length) throw new Error(`Directory is not empty: ${path}`);
-        for (const [child, value] of entries) {
-          if (child !== path && parent(child) === path && value) throw new Error(`Directory is not empty: ${path}`);
+        if (entry.fresh || base.list) {
+          if ((await list(path)).length) throw new Error(`Directory is not empty: ${path}`);
+        } else {
+          for (const [child, value] of entries) {
+            if (child !== path && parent(child) === path && value) throw new Error(`Directory is not empty: ${path}`);
+          }
         }
       }
       entries.set(path, null);
