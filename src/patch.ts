@@ -23,7 +23,17 @@ function seek(lines: string[], pattern: string[], start: number, eof: boolean): 
 function update(contents: string, chunks: Chunk[], path: string): string {
   const lines = contents.split("\n");
   if (lines.at(-1) === "") lines.pop();
-  const replacements: { start: number; count: number; lines: string[] }[] = [];
+  // Keep source terminators separate from patch-created LF lines. Matching still
+  // uses the same logical lines and tolerance tiers as before.
+  type Line = { text: string; ending: string; added: boolean };
+  const source: Line[] = lines.map((text, i) => {
+    const terminated = i < lines.length - 1 || contents.endsWith("\n");
+    return terminated && text.endsWith("\r")
+      ? { text: text.slice(0, -1), ending: "\r\n", added: false }
+      : { text, ending: terminated ? "\n" : "", added: false };
+  });
+  const added = (text: string): Line => ({ text, ending: "\n", added: true });
+  const replacements: { start: number; count: number; lines: Line[] }[] = [];
   let cursor = 0;
   for (const chunk of chunks) {
     if (chunk.context !== undefined) {
@@ -33,7 +43,7 @@ function update(contents: string, chunks: Chunk[], path: string): string {
     }
     if (!chunk.old.length) {
       replacements.push({ start: lines.at(-1) === "" ? lines.length - 1 : lines.length,
-        count: 0, lines: chunk.replacement });
+        count: 0, lines: chunk.replacement.map(added) });
       continue;
     }
     let pattern = chunk.old;
@@ -45,17 +55,26 @@ function update(contents: string, chunks: Chunk[], path: string): string {
       found = seek(lines, pattern, cursor, chunk.eof);
     }
     if (found === undefined) throw new Error(`Failed to find expected lines in ${path}:\n${chunk.old.join("\n")}`);
-    replacements.push({ start: found, count: pattern.length, lines: newLines });
+    replacements.push({ start: found, count: pattern.length,
+      lines: newLines.flatMap((text, i) => {
+        const index = chunk.sources[i];
+        return index === null ? [added(text)] : index < pattern.length ? [source[found + index]] : [];
+      }) });
     cursor = found + pattern.length;
   }
   replacements.sort((a, b) => a.start - b.start);
   // Avoid spreading arbitrarily large patches into function arguments.
-  let result = lines;
+  let result = source;
   for (const replacement of replacements.reverse()) {
     result = result.slice(0, replacement.start).concat(replacement.lines, result.slice(replacement.start + replacement.count));
   }
-  if (result.at(-1) !== "") result.push("");
-  return result.join("\n");
+  if (!contents.endsWith("\n")) {
+    // Do not manufacture EOF blank lines or a final terminator. Existing source
+    // terminators are retained, including one exposed by deleting the last line.
+    while (result.at(-1)?.added && result.at(-1)!.text === "") result.pop();
+    if (result.at(-1)?.added) result[result.length - 1] = { ...result.at(-1)!, ending: "" };
+  }
+  return result.map((line, i) => line.text + (line.ending || (i < result.length - 1 ? "\n" : ""))).join("");
 }
 
 export type PatchResult = { text: string; added: string[]; modified: string[]; deleted: string[] };

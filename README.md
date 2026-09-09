@@ -66,7 +66,7 @@ through OpenClaw's normal tool-error handling.
 
 The reference is Codex **rust-v0.153.4**, commit
 [`3d2ee51`](https://github.com/openai/codex/tree/3d2ee51ca2d5db578f328aa75e20aa22c0197c9a/codex-rs/apply-patch).
-The parser, matching order, default file-update algorithm, preflight validation,
+The parser, matching order, file-update algorithm, preflight validation,
 and summary format are adapted into TypeScript. There is no streaming parser or
 Codex-specific execution/approval/environment machinery.
 
@@ -82,11 +82,13 @@ Patch behavior:
 - Update sources must be valid UTF-8. Adds may overwrite arbitrary bytes.
 - Deletion does not read or decode contents, so binary files can be removed.
   Successful deletions, including missing-path no-ops, are reported with `D`.
-- Default Codex newline behavior is retained, including appending a trailing
-  newline on updates and replacing matched context with patch text. Untouched
-  CRLF lines can retain their CR while changed lines use LF. This is not a
-  byte-preserving editor; the optional upstream line-ending preservation feature
-  is not implemented.
+- Context lines retain their exact source text and line endings, even when matched
+  using whitespace or punctuation tolerance. Untouched lines are also preserved.
+- Added/replacement lines use LF. Updates and moves do not add an EOF terminator
+  or trailing blank lines when the source lacks a final newline. Appending text
+  still inserts the separator needed after an unterminated source line. Deleting
+  a final line can expose an existing context line's terminator; that terminator
+  is preserved, not newly inserted. New files use LF with a final newline.
 
 OpenClaw-specific adaptation:
 
@@ -173,7 +175,8 @@ root-owned files created by sandbox provisioning.
 
 This opt-in test uses temporary OpenClaw state and disposable Docker containers;
 no Gateway is started. It verifies existing-container reuse, add/update/move/delete,
-binary-file and empty-directory deletion, missing-path no-ops, non-empty-directory
+source-context and EOF preservation, binary-file and empty-directory deletion,
+missing-path no-ops, non-empty-directory
 rejection, path and symlink boundaries, isolated host-file preservation, and
 read-only policy.
 The normal test suite does not require Docker. Other configured sandbox backends

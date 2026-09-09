@@ -1,5 +1,12 @@
 // Adapted from OpenAI Codex rust-v0.153.4 (Apache-2.0). See NOTICE.
-export type Chunk = { context?: string; old: string[]; replacement: string[]; eof: boolean };
+export type Chunk = {
+  context?: string;
+  old: string[];
+  replacement: string[];
+  // For each replacement line: its old-line index for context, or null for additions.
+  sources: (number | null)[];
+  eof: boolean;
+};
 export type Hunk =
   | { kind: "add"; path: string; contents: string }
   | { kind: "delete"; path: string }
@@ -15,7 +22,7 @@ const invalidHunk = (line: number, message: string): never => {
   throw new Error(`Invalid patch hunk on line ${line}: ${message}`);
 };
 const empty = (chunk: Chunk): boolean => !chunk.old.length && !chunk.replacement.length;
-const chunk = (context?: string): Chunk => ({ context, old: [], replacement: [], eof: false });
+const chunk = (context?: string): Chunk => ({ context, old: [], replacement: [], sources: [], eof: false });
 
 /** Parse the complete patch before making any filesystem changes. */
 export function parsePatch(patch: string): Hunk[] {
@@ -102,9 +109,14 @@ export function parsePatch(patch: string): Hunk[] {
       if (!last) update.chunks.push(chunk());
       const target = update.chunks.at(-1)!;
       const text = line.slice(1);
-      if (!line || line[0] === " ") { target.old.push(text); target.replacement.push(text); }
-      else if (line[0] === "+") target.replacement.push(text);
-      else target.old.push(text);
+      if (!line || line[0] === " ") {
+        target.sources.push(target.old.length);
+        target.old.push(text);
+        target.replacement.push(text);
+      } else if (line[0] === "+") {
+        target.sources.push(null);
+        target.replacement.push(text);
+      } else target.old.push(text);
       continue;
     }
     if (last && !empty(last)) expectedContext();
