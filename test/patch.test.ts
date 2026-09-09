@@ -283,3 +283,57 @@ test("moves preserve source context and absent final newline", async () => inTem
   assert.deepEqual(await readFile(join(cwd, "moved.txt")), Buffer.from("  keep\r\nnew"));
   await assert.rejects(readFile(join(cwd, "source.txt")), { code: "ENOENT" });
 }));
+
+
+for (const scenario of [
+  { name: "exact", source: "same\nsame\n", pattern: "same" },
+  { name: "trailing whitespace", source: "same \nsame\t\n", pattern: "same" },
+  { name: "surrounding whitespace", source: " same\n\tsame\n", pattern: "same" },
+  { name: "Unicode punctuation", source: "a\u2013b\na\u2014b\n", pattern: "a-b" },
+]) {
+  test(`rejects ambiguous ${scenario.name} matches before any writes`, async () => inTemp(async cwd => {
+    const path = join(cwd, "source.txt");
+    await writeFile(path, scenario.source);
+    await assert.rejects(applyVerifiedPatch(wrap(
+      `*** Add File: new.txt\n+new\n*** Update File: source.txt\n@@\n-${scenario.pattern}\n+changed`,
+    ), cwd), error => {
+      assert.ok(error instanceof Error);
+      assert.ok(error.message.includes(`Ambiguous match in ${path}: 2 matches at ${scenario.name} tolerance`));
+      return true;
+    });
+    assert.equal(await readFile(path, "utf8"), scenario.source);
+    await assert.rejects(readFile(join(cwd, "new.txt")), { code: "ENOENT" });
+  }));
+}
+
+for (const scenario of [
+  { name: "unique exact match wins over multiple fuzzy matches", source: "same \nsame\nsame\t\n",
+    body: "@@\n-same\n+changed", expected: "same \nchanged\nsame\t\n" },
+  { name: "unique trailing-whitespace match wins over weaker matches", source: " same\nsame \n\tsame\n",
+    body: "@@\n-same\n+changed", expected: " same\nchanged\n\tsame\n" },
+  { name: "full chunk context disambiguates repeated removed lines", source: "first\nsame\nsecond\nsame\n",
+    body: "@@\n second\n-same\n+changed", expected: "first\nsame\nsecond\nchanged\n" },
+  { name: "unique anchor narrows the search region", source: "same\nanchor\nsame\n",
+    body: "@@ anchor\n-same\n+changed", expected: "same\nanchor\nchanged\n" },
+  { name: "previous chunk advances the matching cursor", source: "first\nsame\nsecond\nsame\n",
+    body: "@@\n-first\n+FIRST\n same\n@@\n-same\n+changed", expected: "FIRST\nsame\nsecond\nchanged\n" },
+]) {
+  test(`matching: ${scenario.name}`, async () => inTemp(async cwd => {
+    await writeFile(join(cwd, "source.txt"), scenario.source);
+    await applyVerifiedPatch(wrap(`*** Update File: source.txt\n${scenario.body}`), cwd);
+    assert.equal(await readFile(join(cwd, "source.txt"), "utf8"), scenario.expected);
+  }));
+}
+
+for (const scenario of [
+  { name: "ambiguous anchor", source: "anchor\none\nanchor\ntwo\n", body: "@@ anchor\n-two\n+changed" },
+  { name: "overlapping matches", source: "same\nsame\nsame\n", body: "@@\n same\n-same\n+changed" },
+  { name: "trimmed empty-context fallback", source: "same\nsame\n", body: "@@\n-same\n+changed\n " },
+]) {
+  test(`rejects ${scenario.name}`, async () => inTemp(async cwd => {
+    const path = join(cwd, "source.txt");
+    await writeFile(path, scenario.source);
+    await assert.rejects(applyVerifiedPatch(wrap(`*** Update File: source.txt\n${scenario.body}`), cwd), /Ambiguous match/);
+    assert.equal(await readFile(path, "utf8"), scenario.source);
+  }));
+}

@@ -73,7 +73,11 @@ Codex-specific execution/approval/environment machinery.
 Patch behavior:
 
 - Match exact lines first, then tolerate trailing whitespace, surrounding
-  whitespace, and common Unicode punctuation differences.
+  whitespace, and common Unicode punctuation differences. At the first tolerance
+  level with any matches, require exactly one candidate in the search region;
+  multiple matches are an error, not permission to try a weaker tolerance.
+  This applies to both `@@ context` anchors and complete old-line chunk patterns.
+  Use more context, a unique anchor, or `*** End of File` to disambiguate.
 - Adds and move destinations can overwrite existing files; missing parent
   directories are created.
 - Validate update contents and all operation paths, and reject repeated source

@@ -8,14 +8,28 @@ const normalize = (s: string): string => trim(s)
   .replace(/[\u201c-\u201f]/gu, '"')
   .replace(/[\u00a0\u2002-\u200a\u202f\u205f\u3000]/gu, " ");
 
-function seek(lines: string[], pattern: string[], start: number, eof: boolean): number | undefined {
+function seek(lines: string[], pattern: string[], start: number, eof: boolean, path: string): number | undefined {
   if (!pattern.length) return start;
   if (pattern.length > lines.length) return undefined;
   const from = eof ? lines.length - pattern.length : start;
-  for (const transform of [(s: string) => s, trimEnd, trim, normalize]) {
+  const tiers = [
+    { name: "exact", transform: (s: string) => s },
+    { name: "trailing whitespace", transform: trimEnd },
+    { name: "surrounding whitespace", transform: trim },
+    { name: "Unicode punctuation", transform: normalize },
+  ];
+  for (const { name, transform } of tiers) {
+    const expected = pattern.map(transform);
+    let found: number | undefined;
+    let count = 0;
     for (let i = from; i <= lines.length - pattern.length; i++) {
-      if (pattern.every((line, j) => transform(lines[i + j]) === transform(line))) return i;
+      if (expected.every((line, j) => transform(lines[i + j]) === line)) {
+        found = i;
+        count++;
+      }
     }
+    if (count > 1) throw new Error(`Ambiguous match in ${path}: ${count} matches at ${name} tolerance. Add more context or use a unique @@ anchor or *** End of File.`);
+    if (count === 1) return found;
   }
   return undefined;
 }
@@ -37,7 +51,7 @@ function update(contents: string, chunks: Chunk[], path: string): string {
   let cursor = 0;
   for (const chunk of chunks) {
     if (chunk.context !== undefined) {
-      const found = seek(lines, [chunk.context], cursor, false);
+      const found = seek(lines, [chunk.context], cursor, false, path);
       if (found === undefined) throw new Error(`Failed to find context '${chunk.context}' in ${path}`);
       cursor = found + 1;
     }
@@ -48,11 +62,11 @@ function update(contents: string, chunks: Chunk[], path: string): string {
     }
     let pattern = chunk.old;
     let newLines = chunk.replacement;
-    let found = seek(lines, pattern, cursor, chunk.eof);
+    let found = seek(lines, pattern, cursor, chunk.eof, path);
     if (found === undefined && pattern.at(-1) === "") {
       pattern = pattern.slice(0, -1);
       if (newLines.at(-1) === "") newLines = newLines.slice(0, -1);
-      found = seek(lines, pattern, cursor, chunk.eof);
+      found = seek(lines, pattern, cursor, chunk.eof, path);
     }
     if (found === undefined) throw new Error(`Failed to find expected lines in ${path}:\n${chunk.old.join("\n")}`);
     replacements.push({ start: found, count: pattern.length,
