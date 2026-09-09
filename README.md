@@ -1,41 +1,33 @@
 # OpenClaw Better Patch
 
-`@lastguru-net/openclaw-better-patch` provides the `better_patch` file-editing tool
-for OpenClaw, with dependency-aware validation and source-preserving edits.
-It requires **OpenClaw 2026.9.2+** and has no runtime dependency other than its
-OpenClaw host. SDK integration is tested against 2026.9.2. No Codex binary, service, or caller-supplied shell patch command
-is required.
+File patching for OpenClaw with dependency-aware validation and source-preserving
+edits. Provides the `better_patch` tool. Requires OpenClaw 2026.9.2+.
 
-## Install from this repository
+## Installation
 
-With Node.js 22.22.3+ and npm installed:
+Build and install from source with Node.js 22.22.3+:
 
 ```sh
 git clone https://github.com/lastguru-net/openclaw-better-patch.git
 cd openclaw-better-patch
 npm ci
-npm run check
 npm pack
 openclaw plugins install ./lastguru-net-openclaw-better-patch-0.1.0.tgz
 ```
 
-The plugin ID is `better-patch`; the tool name is `better_patch`. Allow the plugin
-in `plugins.allow` if you use a plugin allowlist, and allow `better_patch` in your
-agent's tool policy. Installation does not override tool deny rules. Start a new
-session after activation. The plugin does not disable or replace an existing
-`apply_patch` tool; agent instructions can prefer `better_patch`.
+If you use a plugin allowlist, add `better-patch` to `plugins.allow`. Allow
+`better_patch` in your agent's tool policy and start a new session after activation.
+The plugin does not disable `apply_patch`; agent instructions can prefer `better_patch`.
 
-## Syntax and results
+## Usage
 
-The tool takes one JSON field, `input`, containing the complete patch:
+Call `better_patch` with an `input` string containing the patch:
 
 ```json
-{
-  "input": "*** Begin Patch\n*** Add File: hello.txt\n+Hello, world!\n*** End Patch"
-}
+{"input":"*** Begin Patch\n*** Add File: hello.txt\n+Hello, world!\n*** End Patch"}
 ```
 
-Patch syntax supports multiple files, adds, deletes, updates, and moves:
+A patch can add, update, move or delete multiple files:
 
 ```diff
 *** Begin Patch
@@ -44,193 +36,43 @@ Patch syntax supports multiple files, adds, deletes, updates, and moves:
 @@
 -Hello, world!
 +Hello, OpenClaw!
+*** Delete File: obsolete.txt
 *** End Patch
 ```
 
-- Add files with `*** Add File: path` and `+`-prefixed lines.
-- Delete a file or empty directory with `*** Delete File: path`. Missing paths
-  succeed; non-empty directories are not removed.
-- Update with `*** Update File: path`, optionally followed by `*** Move to: path`.
-- Prefix update lines with a space for context, `-` for removal, or `+` for addition.
-- Separate chunks with `@@`; use `@@ context text` to locate a later section.
-  An insertion-only chunk with a textual anchor inserts immediately after that
-  matched source line. Without a textual anchor, insertion-only chunks append at
-  the file ending (before an existing trailing blank line).
-- Use `*** End of File` after a chunk to match the file's ending without moving
-  backward over an earlier chunk. Overlapping chunk edits are rejected.
+- Use `*** Add File: path` with `+`-prefixed lines to create or overwrite a file.
+- Use `*** Update File: path` for an existing UTF-8 file, optionally followed by
+  `*** Move to: path`. Move destinations can also be overwritten.
+- Within update chunks, prefix context with a space, removals with `-`, additions
+  with `+`. Separate chunks with `@@`; `@@ context text` locates a section.
+- Context must match uniquely. Add more context or use `*** End of File` after a
+  chunk to select the file ending.
+- `*** Delete File: path` removes a file or empty directory. Missing paths succeed;
+  nonempty directories are rejected.
 
-Results summarize each explicitly named path once, comparing initial and final
-state: `A` added, `M` modified, `D` deleted, and `N` unchanged. Add then update
-reports only `A`; Add overwriting an existing file reports `M`. Moves report source
-and destination changes. An all-unchanged result says `No changes made.`; otherwise
-it starts with `Success. Updated the following files:`. Structured results include
-`added`, `modified`, `deleted`, and `unchanged` arrays. Net unchanged does not mean
-no intermediate writes occurred when separate operations cancel each other.
-Errors are surfaced through OpenClaw's normal tool-error handling.
+Relative paths start at the agent workspace, not the shell's current directory.
+Absolute paths remain subject to OpenClaw's filesystem policy.
 
-## Execution
+## Behavior
 
-Operations run in written order. Adds and move destinations can overwrite existing
-files and create missing parent directories. Updates require existing UTF-8 files;
-Adds may overwrite arbitrary bytes. Deletion does not read file contents, so binary
-files can be removed. A move to the same resolved path is an ordinary update.
+Operations run in written order, so an update can follow an add in the same patch.
+Preflight validates the patch before writing. Execution is not transactional:
+I/O failures can leave partial changes.
 
-Preflight simulates preceding operations, so updates can depend on earlier adds,
-edits, moves and deletions. Invalid dependent matches reject before writes.
-Execution re-reads current source bytes. Preflight tracks normalized paths, not
-filesystem alias identities, and does not prove permissions or prevent concurrent
-changes. Actual adapter checks remain authoritative. I/O failures can leave partial
-changes; no rollback is attempted. Whole-patch atomicity is tracked in
-[issue #2](https://github.com/lastguru-net/openclaw-better-patch/issues/2).
+Matching tolerates whitespace and common Unicode punctuation differences.
+Unchanged text, line endings and a leading UTF-8 BOM are preserved. Inserted lines
+inherit surrounding line endings; new files use LF. The original final-newline
+state is retained except where explicitly added blank lines require a newline.
 
-Byte-identical updates (including same-path moves), identical Adds to regular files,
-and missing Deletes skip mutation calls. Equality includes whitespace, BOM and
-line-ending bytes. Moving to a different path still executes.
+Unchanged operations skip writes. Results report each named path's net change:
+`A` added, `M` modified, `D` deleted, `N` unchanged.
 
-## Matching and text preservation
-
-Matching ignores LF, CR, CRLF and LFCR terminators. Both textual anchors and complete
-old-line chunk patterns require exactly one match at the first tolerance level
-with candidates: exact text, trailing whitespace, surrounding whitespace, then
-common Unicode punctuation. Multiple candidates at that level reject; use more
-context, a unique anchor or EOF anchoring to disambiguate.
-
-- Context and untouched lines retain their source text and endings, even with
-  tolerant matching, except when a line becomes or ceases to be the last line.
-- Added/replacement lines inherit the preceding output line's ending. At the start,
-  they use the original first line's ending. After an unterminated line, they use
-  the nearest preceding ending. LF is the fallback when none exists.
-- The new last line inherits the original last line's ending, including no ending.
-  This also applies when deletion exposes a context or untouched line at EOF.
-  Explicit inserted empty lines always survive; a final inserted empty line gets
-  an inferred terminator if needed to represent it, overriding an absent final
-  newline. Ordinary nonempty replacements preserve the original EOF state.
-  Newly added files use LF.
-- A leading UTF-8 BOM is metadata, excluded from matching and preserved once at
-  the start of updated or moved files. Inserting before the first line keeps the
-  BOM ahead of the new text; deleting all text leaves a BOM-only file. Interior
-  U+FEFF characters remain content. Delete File removes the entire file.
-
-## Filesystem boundaries
-
-Relative paths use the agent workspace, or the sandbox workspace in sandboxed runs.
-Absolute paths are subject to the same effective filesystem policy. Sessions without
-an identified workspace do not receive the tool.
-
-### Host
-
-Host access uses OpenClaw's guarded root API. Unrestricted Linux sessions use `/`;
-workspace-only sessions use the effective allowed root, including narrower roots.
-Checks cover resolved ancestors and move destinations, but are not an OS sandbox
-against concurrent hostile filesystem changes. They grant no additional OS permissions.
-
-- Reads have no plugin-imposed size cap. The engine processes complete files in memory.
-- Content access requires regular files, excluding FIFOs, sockets and unsafe
-  device/process-descriptor paths.
-- Portable destination checks can reject legal POSIX names such as a leading
-  `C:name.txt`; colons are not generally banned.
-- Writes use atomic per-file replacement. New files use the library's `0600`
-  default; replacement normally preserves permission bits, not other metadata or
-  inode identity. A post-write identity-check error does not imply rollback.
-- Symlink reads follow targets within the allowed root. Writing replaces a leaf
-  file symlink rather than its target; directory symlinks may be followed within
-  the root. Default guards reject files with multiple hardlinks.
-
-### Sandbox
-
-Configured sandboxes use their filesystem bridge, never a host-file fallback.
-Read-only workspaces reject writes; backend read limits still apply.
-
-Workspace-only access requires the allowed root to map to the full sandbox workspace.
-Narrower or different roots, custom binds, separate agent-workspace mounts and resource
-mounts outside the root reject before I/O: the public bridge cannot enforce these
-restrictions against aliases across its permitted mounts. Unrestricted sandbox calls
-retain the bridge's own mount policy.
-
-The bridge has no directory-listing API, and some nonregular entries cannot be typed
-by its stat operation. Preflight therefore leaves unobserved directory contents and
-unknown entry types to actual I/O checks. Nonrecursive removal rejects nonempty
-directories. Remote-worker placements are unsupported because the plugin cannot
-obtain their runtime-owned filesystem capability.
-
-## Development
-
-```sh
-npm ci
-npm run check
-```
-
-Tests cover patch syntax, text preservation, ordered dependencies, results and adapter
-boundaries. Compatibility fixtures reference Codex **rust-v0.153.4**, commit
-[`3d2ee51`](https://github.com/openai/codex/tree/3d2ee51ca2d5db578f328aa75e20aa22c0197c9a/codex-rs/apply-patch).
-The tool accepts a JSON `input` string, not a freeform argument. Environment ID routing
-is rejected. Literal EOF wrappers are tolerated but never executed. Codex-specific
-approval, UI diffs, execution metadata and filesystem events are not reproduced;
-errors use Node.js messages.
-
-The parser emits ordered keep/insert/remove blocks. The engine ranks matches, builds
-non-overlapping source-coordinate changes and renders source ranges plus inserted
-text. Preflight and execution share the engine through `PatchFileSystem`, implemented
-by the separate host and sandbox adapters.
-
-OpenClaw 2026.9.2 is pinned for SDK verification, not bundled. The development-only
-`@openclaw/fs-safe` 0.8.1 dependency supplies declarations missing from that SDK's
-`file-access-runtime` export; runtime imports still go through OpenClaw. Host metadata
-uses guarded parent resolution and leaf-only lstat, preserving dangling-link existence
-without sibling-listing races. Sandbox resolution is lazy per tool instance, uses
-`resolveSandboxContext` and stored skill selections, and checks Gateway placement
-through `sessions.describe` before provisioning.
-
-### Docker integration
-
-With Docker access and `python:3.12-slim` available locally:
-
-```sh
-node --import tsx --test test/sandbox.integration.ts
-```
-
-Rootful Docker needs sufficient cleanup privileges, for example
-`sudo node --import tsx --test test/sandbox.integration.ts`.
-The test shares disposable containers across named phases and uses temporary OpenClaw
-state; no Gateway is started. It checks bridge operations, dependencies, no-ops,
-representative text preservation, path/mount boundaries, host isolation and read-only
-policy. Regular tests do not need Docker. Other sandbox backends share the bridge
-interface but are not integration-tested here.
-
-## Publishing to npm
-
-The `npm-publish.yml` GitHub Actions workflow publishes when a GitHub release is
-published. A manual **Run workflow** executes validation only, including build,
-regular tests, Docker integration, package metadata checks and `npm publish --dry-run`.
-It does not publish a package.
-
-For a release, keep the version in `package.json`, `package-lock.json`,
-`openclaw.plugin.json` and the plugin definition in `src/index.ts` aligned. Commit
-those changes, then publish a GitHub release tagged `v<version>`. Stable versions
-publish to npm's `latest` tag. Versions with a prerelease suffix must use a GitHub
-prerelease and publish to `next`. The workflow publishes the same tarball it validates.
-
-Authentication uses [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/)
-on GitHub-hosted runners. In the npm package's Trusted Publisher settings, configure:
-
-- Provider: GitHub Actions
-- Organization or user: `lastguru-net`
-- Repository: `openclaw-better-patch`
-- Workflow filename: `npm-publish.yml`
-- Environment: leave empty
-- Allowed action: enable direct `npm publish`
-
-No npm token is needed in repository secrets. npm generates provenance for trusted
-publishing from this public repository. For a new package, establish the package
-under the intended npm account/scope before configuring its package-level trusted
-publisher. A maintainer can do the initial publication from a checked checkout using
-`npm login`, `npm run check`, `npm pack`, and `npm publish <tarball> --access public`.
-Publishing requires permission for the `@lastguru-net` scope.
+Host and configured sandbox access respect OpenClaw's filesystem policy. Remote
+workers and workspace-only sandboxes with narrower roots or extra mount layouts
+are unsupported. Host writes replace leaf symlinks rather than their targets;
+files with multiple hardlinks are rejected by the host guards.
 
 ## License
 
-Original plugin code and project contributions use [MIT](LICENSE). OpenAI scenario
-fixtures use [Apache-2.0](LICENSES/Apache-2.0.txt), with attribution in
-[test/fixtures/NOTICE](test/fixtures/NOTICE). [NOTICE](NOTICE) preserves
-upstream attribution. MIT does not relicense third-party material. Both license
-texts and NOTICE are packaged; fixture data is excluded.
+[MIT](LICENSE). Copied test fixtures are [Apache-2.0](LICENSES/Apache-2.0.txt);
+see [NOTICE](NOTICE) for attribution.
