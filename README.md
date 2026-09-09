@@ -201,7 +201,6 @@ interface but are not integration-tested here.
 
 Original plugin code and project contributions use [MIT](LICENSE). OpenAI scenario
 fixtures use [Apache-2.0](LICENSES/Apache-2.0.txt), with attribution in
-[test/fixtures/NOTICE](test/fixtures/NOTICE). [NOTICE](NOTICE) preserves project
-provenance and applicable upstream notices. MIT does not relicense third-party
-material or remove remaining Apache-2.0 obligations. Both license texts and NOTICE
-are packaged; fixture data is excluded.
+[test/fixtures/NOTICE](test/fixtures/NOTICE). [NOTICE](NOTICE) preserves
+upstream attribution. MIT does not relicense third-party material. Both license
+texts and NOTICE are packaged; fixture data is excluded.

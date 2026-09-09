@@ -2,26 +2,15 @@ OpenClaw Better Patch
 Copyright 2026 Dmitry Golubev
 
 Original project contributions are licensed under MIT; see LICENSE.
-Third-party material is not relicensed by that grant. The retained Codex
-fixtures are Apache-2.0; see test/fixtures/NOTICE and LICENSES/Apache-2.0.txt.
-Any remaining Codex-derived material retains its applicable Apache-2.0
-conditions. The full Apache license and this notice accompany the package.
+The MIT grant does not relicense third-party material.
 
-This project originated as an adaptation of the OpenAI Codex parser and patch
-engine. Its upstream scenario fixtures remain copied from Codex. Applicable
-upstream attribution is retained under Apache License 2.0:
-OpenAI Codex
+OpenAI Codex is the patch-format and compatibility reference:
 Copyright 2025 OpenAI
 https://github.com/openai/codex
 Reference: rust-v0.153.4, commit 3d2ee51ca2d5db578f328aa75e20aa22c0197c9a
-Sources: codex-rs/apply-patch/src/{parser,streaming_parser,seek_sequence,file_update,lib}.rs
-         codex-rs/apply-patch/tests/fixtures/scenarios/
+Reference sources: codex-rs/apply-patch/src/{parser,streaming_parser,seek_sequence,file_update,lib}.rs
 
-Changes include an OpenClaw tool adapter and a parser/engine redesign using
-file-record parsing, ordered edit operations, source-offset references, candidate
-ranking, and a piece-table edit plan. Better Patch adds source-context retention,
-line-ending inference, ambiguity rejection, anchored insertions, and
-content-independent idempotent deletion. Codex environment routing, streaming
-execution, exec-server integration, and approval machinery are not included.
-The redesign is not represented as a clean-room implementation or as a finding
-that upstream attribution obligations have ended.
+The scenario fixtures are copied from Codex and licensed under Apache-2.0.
+Source: codex-rs/apply-patch/tests/fixtures/scenarios/
+See test/fixtures/NOTICE and LICENSES/Apache-2.0.txt.
+Both license texts and this notice accompany the package.
