@@ -1,6 +1,12 @@
 OpenClaw Better Patch
 Copyright 2026 Dmitry Golubev
 
+Original project contributions are licensed under MIT; see LICENSE.
+Third-party material is not relicensed by that grant. The retained Codex
+fixtures are Apache-2.0; see test/fixtures/NOTICE and LICENSES/Apache-2.0.txt.
+Any remaining Codex-derived material retains its applicable Apache-2.0
+conditions. The full Apache license and this notice accompany the package.
+
 This project originated as an adaptation of the OpenAI Codex parser and patch
 engine. Its upstream scenario fixtures remain copied from Codex. Applicable
 upstream attribution is retained under Apache License 2.0:

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Codex-style patch editing for OpenClaw, without a Codex dependency",
   "type": "module",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "author": "Dmitry Golubev <lastguru@gmail.com>",
   "repository": {
     "type": "git",
@@ -16,6 +16,7 @@
     "dist",
     "openclaw.plugin.json",
     "LICENSE",
+    "LICENSES",
     "NOTICE",
     "README.md"
   ],

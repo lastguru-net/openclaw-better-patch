@@ -197,7 +197,12 @@ use the same bridge interface but have not been integration-tested here.
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE) for project provenance and
-upstream attribution, including the copied scenario fixtures. The parser/engine
-redesign is not a claim of clean-room development or removal of inherited
-attribution obligations.
+Original plugin code and project contributions are licensed under
+[MIT](LICENSE). The retained OpenAI scenario fixtures are separately licensed
+under [Apache-2.0](LICENSES/Apache-2.0.txt), with attribution in
+[test/fixtures/NOTICE](test/fixtures/NOTICE).
+
+[NOTICE](NOTICE) preserves project provenance and applicable upstream notices.
+MIT does not relicense third-party material or remove any remaining Apache-2.0
+obligations. The package includes both license texts and NOTICE; fixture data
+is not included in the package.
