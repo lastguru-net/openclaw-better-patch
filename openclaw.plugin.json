@@ -2,7 +2,7 @@
   "id": "better-patch",
   "name": "Better Patch",
   "version": "0.1.0",
-  "description": "File patching for OpenClaw with dependency-aware validation and source-preserving edits",
+  "description": "Reliable file editing for OpenClaw agents, with safer matching and fewer formatting surprises",
   "activation": { "onStartup": false },
   "contracts": { "tools": ["better_patch"] },
   "configSchema": { "type": "object", "properties": {}, "additionalProperties": false }

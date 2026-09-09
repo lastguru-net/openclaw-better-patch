@@ -92,7 +92,19 @@ function compile(source: Source, blocks: EditBlock[], path: string): Change[] {
     const expected = block.lines.filter(line => line.kind !== "insert").map(line => line.text);
     let consumed = expected.length;
     let position: number | undefined;
-    if (consumed === 0) {
+    if (block.line !== undefined) {
+      position = block.line - 1;
+      if (position > source.size || position + consumed > source.size) {
+        throw new Error(`Line ${block.line} is outside the available range in ${path}`);
+      }
+      if (!expected.every((text, offset) => source.matchText(position! + offset) === text)) {
+        throw new Error(`Exact text mismatch at line ${block.line} in ${path}`);
+      }
+      if (block.atEnd && position + consumed !== source.size) {
+        throw new Error(`Chunk at line ${block.line} does not reach EOF in ${path}`);
+      }
+      cursor = position + consumed;
+    } else if (consumed === 0) {
       const append = source.size && source.raw(source.size - 1) === source.ending(source.size - 1) ? source.size - 1 : source.size;
       position = block.anchor === undefined ? append : cursor;
     } else {

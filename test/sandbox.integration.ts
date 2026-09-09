@@ -40,6 +40,12 @@ test('stable SDK uses the existing Docker sandbox for patch operations and enfor
     await assert.rejects(tool.execute('bad-dependent', { input: wrap('*** Add File: uncreated\n+one\n*** Update File: uncreated\n@@\n-wrong\n+two') }), /expected lines/);
     assert.equal(await active.fsBridge.stat({ filePath: `${active.containerWorkdir}/uncreated` }), null);
   });
+  await t.test('exact numbered chunks', async () => {
+    await tool.execute('numbered', { input: wrap('*** Add File: numbered\n+same\n+same\n*** Update File: numbered\n@@@ 2\n-same\n+changed') });
+    assert.equal((await active.fsBridge.readFile({ filePath: `${active.containerWorkdir}/numbered` })).toString(), 'same\nchanged\n');
+    await assert.rejects(tool.execute('numbered-mismatch', { input: wrap('*** Add File: numbered-uncreated\n+new\n*** Update File: numbered\n@@@ 1\n-changed\n+wrong') }), /Exact text mismatch/);
+    assert.equal(await active.fsBridge.stat({ filePath: `${active.containerWorkdir}/numbered-uncreated` }), null);
+  });
   await t.test('add, move and path boundaries', async () => {
     await tool.execute('add', { input: wrap('*** Add File: nested/file\n+old') });
     await tool.execute('move', { input: wrap('*** Update File: nested/file\n*** Move to: moved/file\n@@\n-old\n+new') });

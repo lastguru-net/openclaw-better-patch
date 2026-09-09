@@ -1,6 +1,6 @@
 // Project provenance and license: see NOTICE.
 export type EditLine = { kind: "keep" | "insert" | "remove"; text: string };
-export type EditBlock = { anchor?: string; atEnd: boolean; lines: EditLine[] };
+export type EditBlock = { anchor?: string; line?: number; atEnd: boolean; lines: EditLine[] };
 export type FileEdit =
   | { kind: "add"; path: string; contents: string }
   | { kind: "delete"; path: string }
@@ -56,7 +56,7 @@ function records(tokens: Token[]): FileRecord[] {
   return result;
 }
 
-const anchorOf = (token: Token): boolean => token.right === "@@" || token.right.startsWith("@@ ");
+const anchorOf = (token: Token): boolean => token.right === "@@" || token.right.startsWith("@@ ") || token.right.startsWith("@@@");
 const eofOf = (token: Token): boolean => token.right === "*** End of File";
 
 function editLine(token: Token): EditLine {
@@ -88,7 +88,11 @@ function updateRecord(record: FileRecord): FileEdit {
     const start = body[position];
     const block: EditBlock = { atEnd: false, lines: [] };
     if (anchorOf(start)) {
-      if (start.right !== "@@") block.anchor = start.right.slice(3);
+      if (start.right.startsWith("@@@")) {
+        const match = /^@@@ ([1-9][0-9]*)$/.exec(start.raw);
+        if (!match || !Number.isSafeInteger(Number(match[1]))) return fail("Expected @@@ followed by a positive safe integer", start);
+        block.line = Number(match[1]);
+      } else if (start.right !== "@@") block.anchor = start.right.slice(3);
       position++;
     } else if (blocks.length) {
       fail("Expected an @@ marker after an EOF block", start);

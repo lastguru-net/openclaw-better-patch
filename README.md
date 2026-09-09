@@ -1,7 +1,9 @@
 # OpenClaw Better Patch
 
-File patching for OpenClaw with dependency-aware validation and source-preserving
-edits. Provides the `better_patch` tool. Requires OpenClaw 2026.9.2+.
+Better Patch is an alternative to `apply_patch` for OpenClaw agents. It edits
+multiple files in one patch, rejects ambiguous edits instead of guessing, and
+preserves existing formatting. It checks the complete patch before writing,
+including edits that depend on earlier operations. Requires OpenClaw 2026.9.2+.
 
 ## Installation
 
@@ -45,8 +47,13 @@ A patch can add, update, move or delete multiple files:
   `*** Move to: path`. Move destinations can also be overwritten.
 - Within update chunks, prefix context with a space, removals with `-`, additions
   with `+`. Separate chunks with `@@`; `@@ context text` locates a section.
-- Context must match uniquely. Add more context or use `*** End of File` after a
-  chunk to select the file ending.
+- Use `@@@ N` instead of `@@` to start a chunk at an exact 1-based line number.
+  Context and removed text must match exactly there, without whitespace or
+  punctuation tolerance. Numbers refer to the source at the start of that update;
+  earlier chunks do not shift them. Insertion-only chunks insert before N;
+  line count + 1 appends. An EOF marker additionally requires the chunk to end at EOF.
+- Without line numbers, context must match uniquely. Add more context or use
+  `*** End of File` after a chunk to select the file ending.
 - `*** Delete File: path` removes a file or empty directory. Missing paths succeed;
   nonempty directories are rejected.
 
