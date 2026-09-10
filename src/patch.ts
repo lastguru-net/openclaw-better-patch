@@ -76,6 +76,18 @@ function locate(source: Source, expected: string[], cursor: number, atEnd: boole
   return winner;
 }
 
+/** Prefix anchors are literal and unique within the remaining source region. */
+function locatePrefix(source: Source, prefix: string, cursor: number, path: string): number {
+  let winner: number | undefined;
+  let count = 0;
+  for (let position = cursor; position < source.size; position++) {
+    if (source.matchText(position).startsWith(prefix)) { winner = position; count++; }
+  }
+  if (count > 1) throw new Error(`Ambiguous prefix anchor in ${path}: ${count} matches. Supply a longer unique prefix or use @@@ N.`);
+  if (winner === undefined) throw new Error(`Failed to find prefix '${prefix}' in ${path}`);
+  return winner;
+}
+
 // Numbers reference source lines; strings are newly supplied text. A piece table
 // keeps untouched ranges compact while edits change the logical line sequence.
 type Token = number | string;
@@ -91,6 +103,7 @@ function compile(source: Source, blocks: EditBlock[], path: string): Change[] {
       if (anchor === undefined) throw new Error(`Failed to find context '${block.anchor}' in ${path}`);
       cursor = anchor + 1;
     }
+    if (block.prefix !== undefined) cursor = locatePrefix(source, block.prefix, cursor, path) + 1;
     const expected = block.lines.filter(line => line.kind !== "insert").map(line => line.text);
     let consumed = expected.length;
     let position: number | undefined;
@@ -108,7 +121,7 @@ function compile(source: Source, blocks: EditBlock[], path: string): Change[] {
       cursor = position + consumed;
     } else if (consumed === 0) {
       const append = source.size && source.raw(source.size - 1) === source.ending(source.size - 1) ? source.size - 1 : source.size;
-      position = block.anchor === undefined ? append : cursor;
+      position = block.anchor === undefined && block.prefix === undefined ? append : cursor;
     } else {
       position = locate(source, expected, cursor, block.atEnd, path);
       if (position === undefined && expected[consumed - 1] === "") {
