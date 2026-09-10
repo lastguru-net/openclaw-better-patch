@@ -52,7 +52,7 @@ test('noop add update and missing delete do not call mutation methods', async t 
   await writeFile(join(dir, 'f'), 'one\n');
   const result = await run(`${add('f', 'one')}\n${update('f', 'one', 'one')}\n*** Delete File: absent`);
   assert.deepEqual(mutations, []); assert.deepEqual(result.unchanged, ['f', 'absent']);
-  assert.equal(result.text, 'No changes made.\nN f\nN absent\n');
+  assert.equal(result.text, 'Success. Verified final file bytes and expected path presence/absence for all touched paths.\nN f\nN absent\n');
 });
 test('BOM and mixed context preserve exact bytes without writes', async t => {
   const { dir, run, mutations } = await setup(t);

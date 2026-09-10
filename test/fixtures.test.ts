@@ -17,7 +17,7 @@ const rejectFixtures = new Set([
   "015_failure_after_partial_success_leaves_changes",
 ]);
 
-const fixtureResults: Record<string, Omit<PatchResult, "text" | "unchanged"> & { unchanged?: string[] }> = {
+const fixtureResults: Record<string, Omit<PatchResult, "text" | "unchanged" | "verification"> & { unchanged?: string[] }> = {
   "007_rejects_missing_file_delete": { added: [], modified: [], deleted: [], unchanged: ["missing.txt"] },
   "001_add_file": { added: ["bar.md"], modified: [], deleted: [] },
   "002_multiple_operations": { added: ["nested/new.txt"], modified: ["modify.txt"], deleted: ["delete.txt"] },
@@ -84,8 +84,11 @@ for (const name of fixtureNames) {
     } else {
       assert.ifError(failure);
       const expected = fixtureResults[name];
-      const { text: _text, ...categories } = result!;
+      const { text: _text, verification, ...categories } = result!;
       assert.deepEqual(categories, { unchanged: [], ...expected });
+      assert.deepEqual(verification, {
+        status: "passed", checkedPaths: Object.values({ unchanged: [], ...expected }).flat().length,
+      });
     }
   }));
 }

@@ -16,8 +16,9 @@ test('registers a per-session factory and edits the workspace through the tool c
   assert.ok(tool);
   assert.equal(tool.name, 'better_patch');
   const result = await tool.execute('test', { input: add('nested/file.txt') });
-  assert.deepEqual(result, { content: [{ type: 'text', text: 'Success. Updated the following files:\nA nested/file.txt\n' }],
-    details: { added: ['nested/file.txt'], modified: [], deleted: [], unchanged: [] } });
+  assert.deepEqual(result, { content: [{ type: 'text', text: 'Success. Verified final file bytes and expected path presence/absence for all touched paths.\nA nested/file.txt\n' }],
+    details: { added: ['nested/file.txt'], modified: [], deleted: [], unchanged: [],
+      verification: { status: 'passed', checkedPaths: 1 } } });
   assert.equal(await readFile(join(root, 'nested/file.txt'), 'utf8'), 'hello\n');
   await assert.rejects(tool.execute('bad', { input: 7 }), /requires a string/);
   const controller = new AbortController();
@@ -77,3 +78,49 @@ test('sandbox resolution rejects remote placements and stale session identities 
     await assert.rejects(resolver(ctx), /identity|Worker placement/);
   }
 });
+
+for (const mode of ['corrupt', 'denied', 'write-error'] as const) {
+  test(`sandbox tool reports ${mode} in model-visible text and error details without host fallback`, async () => {
+    const files = new Map<string, Buffer>();
+    let reads = 0;
+    const sandbox = {
+      workspaceDir: '/host', agentWorkspaceDir: '/host', docker: {}, containerWorkdir: '/workspace', workspaceAccess: 'rw',
+      fsBridge: {
+        resolvePath: ({ filePath }: { filePath: string }) => ({
+          containerPath: filePath.startsWith('/') ? filePath : `/workspace/${filePath}`,
+        }),
+        stat: async ({ filePath }: { filePath: string }) => filePath === '/workspace' ? { type: 'directory' }
+          : files.has(filePath) ? { type: 'file' } : null,
+        readFile: async ({ filePath }: { filePath: string }) => {
+          reads++;
+          if (mode === 'denied') throw new Error('sandbox readback denied');
+          return files.get(filePath)!;
+        },
+        writeFile: async ({ filePath, data }: { filePath: string; data: string }) => {
+          files.set(filePath, Buffer.from(mode === 'corrupt' ? 'wrong' : data));
+          if (mode === 'write-error') throw new Error('write acknowledgment failed');
+        },
+      },
+    };
+    const tool = createBetterPatchTool({ workspaceDir: '/host', sandboxed: true }, async () => sandbox as any)!;
+    const result = await tool.execute('fault', { input: add('file') });
+    assert.equal(result.isError, true);
+    assert.equal(result.details.phase, mode === 'write-error' ? 'execution' : 'verification');
+    assert.equal(result.details.mutationAttempted, true);
+    assert.equal(result.details.verification.status, mode === 'write-error' ? 'not-run' : 'failed');
+    const text = result.content[0].text;
+    assert.match(text, /Changes may already have occurred; no rollback was performed/);
+    assert.doesNotMatch(text, /Success/);
+    if (mode !== 'write-error') {
+      assert.equal(reads, 1);
+      assert.deepEqual(result.details.verification.failures.map((f: any) => [f.path, f.status]), [
+        ['file', mode === 'corrupt' ? 'mismatch' : 'unreadable'],
+      ]);
+      assert.match(text, mode === 'corrupt' ? /file: mismatch: Final file bytes differ/ : /file: unreadable: sandbox readback denied/);
+    } else {
+      assert.equal(reads, 0);
+      assert.match(text, /operation 1\/1 \(add file\)/);
+    }
+    assert.ok(files.has('/workspace/file'));
+  });
+}

@@ -34,9 +34,11 @@ test('stable SDK uses the existing Docker sandbox for patch operations and enfor
   const tool = createBetterPatchTool(ctx, resolve)!;
   await t.test('ordered dependencies and no-op results', async () => {
     const dependent = await tool.execute('dependent', { input: wrap('*** Add File: dependent\n+one\n*** Update File: dependent\n@@\n-one\n+two') });
-    assert.deepEqual(dependent.details, { added: ['dependent'], modified: [], deleted: [], unchanged: [] });
+    assert.deepEqual(dependent.details, { added: ['dependent'], modified: [], deleted: [], unchanged: [],
+      verification: { status: 'passed', checkedPaths: 1 } });
     const noop = await tool.execute('noop', { input: wrap('*** Add File: dependent\n+two\n*** Update File: dependent\n@@\n-two\n+two\n*** Delete File: not-present') });
-    assert.deepEqual(noop.details, { added: [], modified: [], deleted: [], unchanged: ['dependent', 'not-present'] });
+    assert.deepEqual(noop.details, { added: [], modified: [], deleted: [], unchanged: ['dependent', 'not-present'],
+      verification: { status: 'passed', checkedPaths: 2 } });
     await assert.rejects(tool.execute('bad-dependent', { input: wrap('*** Add File: uncreated\n+one\n*** Update File: uncreated\n@@\n-wrong\n+two') }), /expected lines/);
     assert.equal(await active.fsBridge.stat({ filePath: `${active.containerWorkdir}/uncreated` }), null);
   });
@@ -94,10 +96,15 @@ test('stable SDK uses the existing Docker sandbox for patch operations and enfor
     for (const path of ['binary', 'empty', 'absent', 'missing/parents/absent', 'binary']) {
       const existed = remainingDeleteTargets.delete(path);
       const result = await tool.execute('delete', { input: wrap(`*** Delete File: ${path}`) });
-      assert.deepEqual(result.details, { added: [], modified: [], deleted: existed ? [path] : [], unchanged: existed ? [] : [path] });
+      assert.deepEqual(result.details, { added: [], modified: [], deleted: existed ? [path] : [], unchanged: existed ? [] : [path],
+        verification: { status: 'passed', checkedPaths: 1 } });
       execFileSync('docker', ['exec', active.runtimeId, 'test', '!', '-e', `${active.containerWorkdir}/${path}`]);
     }
-    await assert.rejects(tool.execute('nonempty', { input: wrap('*** Delete File: nonempty') }), /not empty|ENOTEMPTY/);
+    const nonempty = await tool.execute('nonempty', { input: wrap('*** Delete File: nonempty') });
+    assert.equal(nonempty.isError, true);
+    assert.equal(nonempty.details.phase, 'execution');
+    assert.equal(nonempty.details.verification.status, 'not-run');
+    assert.match(nonempty.content[0].text, /not empty|ENOTEMPTY/);
     assert.equal((await active.fsBridge.readFile({ filePath: `${active.containerWorkdir}/nonempty/keep` })).toString(), 'keep');
     await assert.rejects(tool.execute('delete-escape', { input: wrap('*** Delete File: /tmp/absent') }), /outside|escape|workspace/i);
   });

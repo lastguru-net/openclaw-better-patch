@@ -1,7 +1,9 @@
 // Project provenance and license: see NOTICE.
+import { dirname } from "node:path";
 import { parsePatch, type EditBlock, type FileEdit } from "./parser.js";
 import type { PatchFileSystem } from "./filesystem.js";
 import { preflightFileSystem } from "./preflight.js";
+import { equalBytes as equal, verifyFinalState, type ExpectedState, type VerificationFailure } from "./verification.js";
 
 /** A source line is an offset range, not a normalized copy of its contents. */
 class Source {
@@ -168,9 +170,26 @@ function render(source: Source, changes: Change[]): string {
   return source.bom + output.join("");
 }
 
-export type PatchResult = { text: string; added: string[]; modified: string[]; deleted: string[]; unchanged: string[] };
+export type PatchResult = {
+  text: string; added: string[]; modified: string[]; deleted: string[]; unchanged: string[];
+  verification: { status: "passed"; checkedPaths: number };
+};
+export type PatchFailureDetails = {
+  phase: "preparation" | "execution" | "verification";
+  completedOperations: number;
+  totalOperations: number;
+  mutationAttempted: boolean;
+  verification: { status: "not-run" | "failed"; failures?: VerificationFailure[] };
+};
+export class PatchError extends Error {
+  readonly code?: string;
+  constructor(message: string, readonly details: PatchFailureDetails, cause?: unknown) {
+    super(message, { cause });
+    this.name = "PatchError";
+    this.code = (cause as { code?: string } | undefined)?.code;
+  }
+}
 const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
-const equal = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((value, i) => value === b[i]);
 
 async function revised(source: string, blocks: EditBlock[], fs: PatchFileSystem): Promise<{ original: Uint8Array; content: string }> {
   let original: Uint8Array;
@@ -183,77 +202,139 @@ async function revised(source: string, blocks: EditBlock[], fs: PatchFileSystem)
   return { original, content: render(document, compile(document, blocks, source)) };
 }
 
-async function perform(edit: FileEdit, cwd: string, fs: PatchFileSystem): Promise<boolean> {
+async function perform(
+  edit: FileEdit, cwd: string, fs: PatchFileSystem,
+  expected?: Map<string, ExpectedState>, onMutation?: () => void,
+): Promise<boolean> {
+  const write = async (path: string, content: string, createParents: boolean) => {
+    onMutation?.();
+    await fs.write(path, content, createParents);
+    // Later writes can recreate an explicitly deleted ancestor as a directory.
+    if (expected && createParents) {
+      for (let parent = dirname(path); ; parent = dirname(parent)) {
+        if (expected.get(parent) === null) expected.set(parent, { kind: "directory" });
+        if (dirname(parent) === parent) break;
+      }
+    }
+  };
   const source = fs.resolve(cwd, edit.path);
   await fs.checkPath(source);
   if (edit.kind === "delete") {
+    expected?.set(source, null);
     if (!await fs.inspect(source)) return false;
-    try { await fs.remove(source); }
+    try { onMutation?.(); await fs.remove(source); }
     catch (cause) { throw new Error(`Failed to delete path ${source}: ${(cause as Error).message}`, { cause }); }
   } else if (edit.kind === "add") {
+    const data = bytes(edit.contents);
+    expected?.set(source, { kind: "file", data });
     const info = await fs.inspect(source);
-    if (info?.kind === "file" && equal(await fs.read(source), bytes(edit.contents))) return false;
-    await fs.write(source, edit.contents, true);
+    if (info?.kind === "file" && equal(await fs.read(source), data)) return false;
+    await write(source, edit.contents, true);
   } else {
     const { original, content } = await revised(source, edit.blocks, fs);
     const destination = edit.destination === undefined ? source : fs.resolve(cwd, edit.destination);
     await fs.checkPath(destination);
-    if (destination === source && equal(original, bytes(content))) return false;
-    await fs.write(destination, content, destination !== source);
+    const data = bytes(content);
+    const unchanged = destination === source && equal(original, data);
+    // An unchanged update may retain a readable leaf symlink.
+    expected?.set(destination, { kind: "file", data, allowOther: unchanged });
+    if (unchanged) return false;
+    await write(destination, content, destination !== source);
     if (destination !== source) {
       await fs.checkPath(source);
+      onMutation?.();
       await fs.remove(source);
+      expected?.set(source, null);
     }
   }
   return true;
 }
 
 async function execute(input: string, cwd: string, fs: PatchFileSystem, preflight: boolean): Promise<PatchResult> {
-  const edits = parsePatch(input);
-  if (!edits.length) throw new Error("No files were modified.");
-  if (preflight) {
-    const virtual = preflightFileSystem(fs);
-    for (const edit of edits) await perform(edit, cwd, virtual);
-  }
-  // Capture only explicitly named paths. Pure deletes never read file contents.
+  let edits: FileEdit[] = [];
   const paths = new Map<string, { label: string; written: boolean }>();
-  for (const edit of edits) {
-    const source = fs.resolve(cwd, edit.path);
-    const previous = paths.get(source);
-    paths.set(source, { label: previous?.label ?? edit.path, written: previous?.written || edit.kind !== "delete" });
-    if (edit.kind === "update" && edit.destination !== undefined) {
-      const destination = fs.resolve(cwd, edit.destination);
-      paths.set(destination, { label: paths.get(destination)?.label ?? edit.destination, written: true });
-    }
-  }
   const initial = new Map<string, { kind: string; data?: Uint8Array } | null>();
-  for (const [path, spec] of paths) {
-    await fs.checkPath(path);
-    const info = await fs.inspect(path);
-    initial.set(path, info ? { ...info, ...(spec.written && info.kind === "file" ? { data: await fs.read(path) } : {}) } : null);
+  try {
+    edits = parsePatch(input);
+    if (!edits.length) throw new Error("No files were modified.");
+    if (preflight) {
+      const virtual = preflightFileSystem(fs);
+      for (const edit of edits) await perform(edit, cwd, virtual);
+    }
+    // Capture only explicitly named paths. Pure deletes never read file contents.
+    for (const edit of edits) {
+      const source = fs.resolve(cwd, edit.path);
+      const previous = paths.get(source);
+      paths.set(source, { label: previous?.label ?? edit.path, written: previous?.written || edit.kind !== "delete" });
+      if (edit.kind === "update" && edit.destination !== undefined) {
+        const destination = fs.resolve(cwd, edit.destination);
+        paths.set(destination, { label: paths.get(destination)?.label ?? edit.destination, written: true });
+      }
+    }
+    for (const [path, spec] of paths) {
+      await fs.checkPath(path);
+      const info = await fs.inspect(path);
+      initial.set(path, info ? { ...info, ...(spec.written && info.kind === "file" ? { data: await fs.read(path) } : {}) } : null);
+    }
+  } catch (cause) {
+    throw new PatchError(`Patch rejected before execution; no changes made. ${(cause as Error).message}`, {
+      phase: "preparation", completedOperations: 0, totalOperations: edits.length,
+      mutationAttempted: false, verification: { status: "not-run" },
+    }, cause);
   }
-  // Re-evaluate against current bytes, not the discarded preflight snapshot.
+  const expected = new Map<string, ExpectedState>();
   const mutated = new Set<string>();
+  let mutationAttempted = false;
+  let completedOperations = 0;
+  // Mark attempts before entering I/O: an adapter can mutate and then throw.
+  const onMutation = () => { mutationAttempted = true; };
+  // Re-evaluate against current bytes, not the discarded preflight snapshot.
   for (const edit of edits) {
-    if (await perform(edit, cwd, fs)) {
-      mutated.add(fs.resolve(cwd, edit.path));
-      if (edit.kind === "update" && edit.destination !== undefined) mutated.add(fs.resolve(cwd, edit.destination));
+    try {
+      if (await perform(edit, cwd, fs, expected, onMutation)) {
+        mutated.add(fs.resolve(cwd, edit.path));
+        if (edit.kind === "update" && edit.destination !== undefined) mutated.add(fs.resolve(cwd, edit.destination));
+      }
+      completedOperations++;
+    } catch (cause) {
+      const state = mutationAttempted
+        ? "Changes may already have occurred; no rollback was performed."
+        : "No filesystem mutations were attempted.";
+      throw new PatchError(
+        `Patch execution failed at operation ${completedOperations + 1}/${edits.length} (${edit.kind} ${edit.path}). `
+        + `${completedOperations} operations completed; later operations were not executed. ${state} `
+        + `Final-state verification was not run. ${(cause as Error).message}`,
+        { phase: "execution", completedOperations, totalOperations: edits.length, mutationAttempted,
+          verification: { status: "not-run" } }, cause,
+      );
     }
   }
-  const result: PatchResult = { text: "", added: [], modified: [], deleted: [], unchanged: [] };
+  const { observed, failures } = await verifyFinalState(paths, expected, fs);
+  if (failures.length) {
+    const state = mutationAttempted
+      ? "Changes may already have occurred; no rollback was performed."
+      : "No filesystem mutations were attempted.";
+    throw new PatchError(
+      `Patch verification failed after execution. ${state}\n`
+      + failures.map(failure => `${failure.path}: ${failure.status}: ${failure.message}`).join("\n"),
+      { phase: "verification", completedOperations, totalOperations: edits.length, mutationAttempted,
+        verification: { status: "failed", failures } },
+    );
+  }
+  const result: PatchResult = { text: "", added: [], modified: [], deleted: [], unchanged: [],
+    verification: { status: "passed", checkedPaths: paths.size } };
   for (const [path, spec] of paths) {
     const before = initial.get(path)!;
-    const after = await fs.inspect(path);
+    const after = observed.get(path)!;
     if (!before && after) result.added.push(spec.label);
     else if (before && !after) result.deleted.push(spec.label);
     else if (!before && !after) result.unchanged.push(spec.label);
     else if (!mutated.has(path) && before?.kind === after?.kind) result.unchanged.push(spec.label);
     else if (before?.kind === "directory" && after?.kind === "directory") result.unchanged.push(spec.label);
-    else if (before?.data && after?.kind === "file" && equal(before.data, await fs.read(path))) result.unchanged.push(spec.label);
+    else if (before?.data && after?.kind === "file" && after.data && equal(before.data, after.data)) result.unchanged.push(spec.label);
     else result.modified.push(spec.label);
   }
-  result.text = result.added.length || result.modified.length || result.deleted.length
-    ? "Success. Updated the following files:\n" : "No changes made.\n";
+  result.text = "Success. Verified final file bytes and expected path presence/absence for all touched paths.\n";
   const rows = [["A", result.added], ["M", result.modified], ["D", result.deleted], ["N", result.unchanged]] as const;
   for (const [label, paths] of rows) for (const path of paths) result.text += `${label} ${path}\n`;
   return result;

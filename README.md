@@ -63,8 +63,13 @@ Absolute paths remain subject to OpenClaw's filesystem policy.
 ## Behavior
 
 Operations run in written order, so an update can follow an add in the same patch.
-Preflight validates the patch before writing. Execution is not transactional:
-I/O failures can leave partial changes.
+Preflight validates the patch before writing. Every successful result also verifies
+final file bytes and expected path presence/absence, including unchanged paths.
+This checks filesystem state at readback, not edit intent or application tests.
+Execution is not transactional: I/O failures can leave partial changes, and
+readback does not guarantee crash durability or prevent subsequent changes.
+Failures distinguish rejection before execution, incomplete execution, and
+final-verification mismatches or unavailable readback. Changes are not rolled back.
 
 Matching tolerates whitespace and common Unicode punctuation differences.
 Unchanged text, line endings and a leading UTF-8 BOM are preserved. Inserted lines

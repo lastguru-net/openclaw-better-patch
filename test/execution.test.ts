@@ -11,8 +11,9 @@ test("standalone application allows repeated source paths and reports one net mo
   ), cwd);
   assert.equal(await readFile(join(cwd, "same.txt"), "utf8"), "three\n");
   assert.deepEqual(result, {
-    text: "Success. Updated the following files:\nM same.txt\n",
+    text: "Success. Verified final file bytes and expected path presence/absence for all touched paths.\nM same.txt\n",
     added: [], modified: ["same.txt"], deleted: [], unchanged: [],
+    verification: { status: "passed", checkedPaths: 1 },
   });
 }));
 
@@ -63,8 +64,9 @@ test("native verification applies valid operations and groups the A/M/D summary"
   );
   const result = await applyVerifiedPatch(patch, cwd);
   assert.deepEqual(result, {
-    text: "Success. Updated the following files:\nA add.txt\nM modify.txt\nD delete.txt\n",
+    text: "Success. Verified final file bytes and expected path presence/absence for all touched paths.\nA add.txt\nM modify.txt\nD delete.txt\n",
     added: ["add.txt"], modified: ["modify.txt"], deleted: ["delete.txt"], unchanged: [],
+    verification: { status: "passed", checkedPaths: 3 },
   });
   assert.equal(await readFile(join(cwd, "modify.txt"), "utf8"), "new\n");
   assert.equal(await readFile(join(cwd, "add.txt"), "utf8"), "created\n");
