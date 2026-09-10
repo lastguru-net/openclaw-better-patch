@@ -12,23 +12,18 @@ export function createBetterPatchTool(ctx: OpenClawPluginToolContext, resolveSan
   return {
     name: "better_patch",
     label: "Better Patch",
-    description: `Patch files inside *** Begin Patch / *** End Patch. Paths use the agent workspace and filesystem policy.
+    description: `Apply multi-file patches inside *** Begin Patch / *** End Patch.
 
-File operations:
-- *** Add File: path with + lines creates or overwrites.
-- *** Update File: path requires an existing UTF-8 file; optional *** Move to: path may overwrite the destination.
-- *** Delete File: path removes files or empty directories; missing paths succeed.
+Files: *** Add File: path (+ lines), *** Update File: path (optional *** Move to: path), *** Delete File: path. Adds/moves may overwrite.
 
-Update chunks:
-Use space/-/+ for context/removal/addition. Context and removed text must contain complete source lines.
-- @@ searches from the current source cursor.
-- @@ context locates a whole line; @@^ prefix locates an exact literal line beginning. Both continue after a unique anchor. Prefix syntax: one ASCII-space delimiter, then a nonempty, untrimmed prefix.
-- @@@ N selects exact 1-based source line N, relative to the update's initial source, unaffected by earlier chunks.
-Ordinary matching requires a unique best match, tolerating whitespace and common Unicode punctuation. Numbered chunks and prefix anchors match exactly.
-Insertion-only chunks insert after an anchor, before numbered line N (line count + 1 appends), or otherwise before a trailing blank line/at EOF. *** End of File constrains context matching or a numbered chunk to EOF.
+Updates: space/-/+ means context/removal/addition; context and removals require whole source lines.
+- @@: search forward with whitespace/punctuation tolerance.
+- @@ context: continue after a unique whole-line anchor.
+- @@^ prefix: continue after a unique exact prefix; one separator space, no trimming.
+- @@@ N: exact text at 1-based source line N; insertions go before N.
+*** End of File constrains matching to EOF. Ambiguous matches reject.
 
-Execution:
-Operations run in written order with dependency-aware preflight. I/O failures may leave partial changes. Success verifies final file bytes and expected presence/absence at readback, not crash durability, future state, edit intent or application tests.`,
+Paths use the workspace and filesystem policy. Ordered preflight precedes writes; failures may leave partial changes. Success verifies filesystem readback, not edit intent or application correctness.`,
     parameters: {
       type: "object",
       properties: { input: { type: "string", description: "Complete patch text, including Begin/End Patch markers." } },
