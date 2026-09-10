@@ -12,7 +12,18 @@ export function createBetterPatchTool(ctx: OpenClawPluginToolContext, resolveSan
   return {
     name: "better_patch",
     label: "Better Patch",
-    description: "Apply file patches using *** Begin Patch / *** End Patch. Use *** Add File: path with + lines, *** Delete File: path, or *** Update File: path with optional *** Move to: path. Update chunks use @@ or @@ context and space/-/+ for context/removal/addition. Use @@@ N for exact text at a 1-based source line; insertion-only chunks insert before N (line count + 1 appends). Line numbers refer to the source at the start of each update; *** End of File anchors at EOF. Without @@@, insertion-only chunks insert after a textual anchor, otherwise before a trailing blank line or at EOF. Supply enough context for a unique match; whitespace and common Unicode punctuation differences are tolerated. Paths resolve from the agent workspace under its filesystem policy. Adds and moves may overwrite; updates require existing UTF-8 files. Deletes accept binary files and empty directories; missing paths succeed. Operations run in written order with dependency-aware preflight, but I/O failures may leave partial changes. Success always verifies final file bytes and expected path presence/absence at readback, not crash durability, future state, edit intent or application tests.",
+    description: `Create, edit, move or delete files with patches enclosed in \`*** Begin Patch\` and \`*** End Patch\`.
+- \`*** Add File: path\` creates or overwrites a file; prefix content lines with \`+\`.
+- \`*** Delete File: path\` deletes a file.
+- \`*** Update File: path\` edits a file. To move it, put \`*** Move to: destination\` before its chunks.
+
+Chunks use whole lines: \` \` keeps context, \`-\` removes, \`+\` adds. Match context and removed lines using:
+- \`@@\` skipping any number of lines before the match.
+- \`@@ anchor\` after that whole anchor line.
+- \`@@^ prefix\` after a line beginning with that exact prefix.
+- \`@@@ N\` exactly at original source line N (1-based).
+
+\`*** End of File\` requires matching at EOF. Ambiguous matches fail. Success verifies filesystem results, not intent; failures may leave partial changes.`,
     parameters: {
       type: "object",
       properties: { input: { type: "string", description: "Complete patch text, including Begin/End Patch markers." } },

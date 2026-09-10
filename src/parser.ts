@@ -1,6 +1,6 @@
 // Project provenance and license: see NOTICE.
 export type EditLine = { kind: "keep" | "insert" | "remove"; text: string };
-export type EditBlock = { anchor?: string; line?: number; atEnd: boolean; lines: EditLine[] };
+export type EditBlock = { anchor?: string; prefix?: string; line?: number; atEnd: boolean; lines: EditLine[] };
 export type FileEdit =
   | { kind: "add"; path: string; contents: string }
   | { kind: "delete"; path: string }
@@ -56,7 +56,7 @@ function records(tokens: Token[]): FileRecord[] {
   return result;
 }
 
-const anchorOf = (token: Token): boolean => token.right === "@@" || token.right.startsWith("@@ ") || token.right.startsWith("@@@");
+const anchorOf = (token: Token): boolean => token.right === "@@" || token.right.startsWith("@@ ") || token.right.startsWith("@@@") || token.raw.startsWith("@@^");
 const eofOf = (token: Token): boolean => token.right === "*** End of File";
 
 function editLine(token: Token): EditLine {
@@ -92,6 +92,9 @@ function updateRecord(record: FileRecord): FileEdit {
         const match = /^@@@ ([1-9][0-9]*)$/.exec(start.raw);
         if (!match || !Number.isSafeInteger(Number(match[1]))) return fail("Expected @@@ followed by a positive safe integer", start);
         block.line = Number(match[1]);
+      } else if (start.raw.startsWith("@@^")) {
+        if (!start.raw.startsWith("@@^ ") || start.raw.length === 4) return fail("Expected @@^ followed by one space and a nonempty literal prefix", start);
+        block.prefix = start.raw.slice(4);
       } else if (start.right !== "@@") block.anchor = start.right.slice(3);
       position++;
     } else if (blocks.length) {

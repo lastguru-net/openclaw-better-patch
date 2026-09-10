@@ -45,8 +45,15 @@ A patch can add, update, move or delete multiple files:
 - Use `*** Add File: path` with `+`-prefixed lines to create or overwrite a file.
 - Use `*** Update File: path` for an existing UTF-8 file, optionally followed by
   `*** Move to: path`. Move destinations can also be overwritten.
-- Within update chunks, prefix context with a space, removals with `-`, additions
-  with `+`. Separate chunks with `@@`; `@@ context text` locates a section.
+- Within update chunks, prefix context with ` `, removals with `-`, additions
+  with `+`. Separate chunks with `@@`, allowing any number of source lines to be
+  skipped before matching context and removals. `@@ anchor` locates a whole anchor line.
+- Use `@@^ prefix` to locate a line by its exact literal beginning. One ASCII space
+  separates `@@^` from a nonempty prefix; any further spaces, tabs and trailing
+  whitespace belong to the prefix. Case and punctuation must match exactly.
+  The prefix must match exactly one line from the current source cursor to EOF.
+  Like `@@ anchor`, it leaves the cursor after that line: insertions go there,
+  and context/removals search from there. The anchor line itself is unchanged.
 - Use `@@@ N` instead of `@@` to start a chunk at an exact 1-based line number.
   Context and removed text must match exactly there, without whitespace or
   punctuation tolerance. Numbers refer to the source at the start of that update;
@@ -60,6 +67,22 @@ A patch can add, update, move or delete multiple files:
 Relative paths start at the agent workspace, not the shell's current directory.
 Absolute paths remain subject to OpenClaw's filesystem policy.
 
+For example, insert a note after a long paragraph without repeating the paragraph:
+
+```diff
+*** Begin Patch
+*** Update File: notes.md
+@@^ My recommendation is
++Follow-up note.
+*** End Patch
+```
+
+This matches a unique line beginning `My recommendation is`, preserving the whole
+line and inserting the note after it. Prefix anchors do not enable substring
+edits: context and removed text still require complete source lines. Missing or
+ambiguous prefixes fail preflight before any writes, even if later chunk text or
+an EOF marker could distinguish the candidates.
+
 ## Behavior
 
 Operations run in written order, so an update can follow an add in the same patch.
@@ -71,7 +94,8 @@ readback does not guarantee crash durability or prevent subsequent changes.
 Failures distinguish rejection before execution, incomplete execution, and
 final-verification mismatches or unavailable readback. Changes are not rolled back.
 
-Matching tolerates whitespace and common Unicode punctuation differences.
+Ordinary context matching tolerates whitespace and common Unicode punctuation
+differences; numbered chunks and prefix anchors use exact matching.
 Unchanged text, line endings and a leading UTF-8 BOM are preserved. Inserted lines
 inherit surrounding line endings; new files use LF. The original final-newline
 state is retained except where explicitly added blank lines require a newline.
