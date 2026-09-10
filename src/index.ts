@@ -12,7 +12,23 @@ export function createBetterPatchTool(ctx: OpenClawPluginToolContext, resolveSan
   return {
     name: "better_patch",
     label: "Better Patch",
-    description: "Apply file patches using *** Begin Patch / *** End Patch. Use *** Add File: path with + lines, *** Delete File: path, or *** Update File: path with optional *** Move to: path. Update chunks use @@ or @@ context and space/-/+ for context/removal/addition. Use @@^ prefix for a unique exact literal line prefix (one ASCII space delimiter, nonempty prefix, no trimming or tolerance); editing starts after that line, not on it. Context and removed text must contain complete source lines. Use @@@ N for exact text at a 1-based source line; insertion-only chunks insert before N (line count + 1 appends). Line numbers refer to the source at the start of each update; *** End of File anchors at EOF. Without @@@, insertion-only chunks insert after a textual anchor, otherwise before a trailing blank line or at EOF. Supply enough context for a unique match; whitespace and common Unicode punctuation differences are tolerated. Paths resolve from the agent workspace under its filesystem policy. Adds and moves may overwrite; updates require existing UTF-8 files. Deletes accept binary files and empty directories; missing paths succeed. Operations run in written order with dependency-aware preflight, but I/O failures may leave partial changes. Success always verifies final file bytes and expected path presence/absence at readback, not crash durability, future state, edit intent or application tests.",
+    description: `Patch files inside *** Begin Patch / *** End Patch. Paths use the agent workspace and filesystem policy.
+
+File operations:
+- *** Add File: path with + lines creates or overwrites.
+- *** Update File: path requires an existing UTF-8 file; optional *** Move to: path may overwrite the destination.
+- *** Delete File: path removes files or empty directories; missing paths succeed.
+
+Update chunks:
+Use space/-/+ for context/removal/addition. Context and removed text must contain complete source lines.
+- @@ searches from the current source cursor.
+- @@ context locates a whole line; @@^ prefix locates an exact literal line beginning. Both continue after a unique anchor. Prefix syntax: one ASCII-space delimiter, then a nonempty, untrimmed prefix.
+- @@@ N selects exact 1-based source line N, relative to the update's initial source, unaffected by earlier chunks.
+Ordinary matching requires a unique best match, tolerating whitespace and common Unicode punctuation. Numbered chunks and prefix anchors match exactly.
+Insertion-only chunks insert after an anchor, before numbered line N (line count + 1 appends), or otherwise before a trailing blank line/at EOF. *** End of File constrains context matching or a numbered chunk to EOF.
+
+Execution:
+Operations run in written order with dependency-aware preflight. I/O failures may leave partial changes. Success verifies final file bytes and expected presence/absence at readback, not crash durability, future state, edit intent or application tests.`,
     parameters: {
       type: "object",
       properties: { input: { type: "string", description: "Complete patch text, including Begin/End Patch markers." } },
