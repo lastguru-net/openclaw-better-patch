@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 import { parsePatch, type EditBlock, type FileEdit } from "./parser.js";
 import type { PatchFileSystem } from "./filesystem.js";
 import { preflightFileSystem } from "./preflight.js";
-import { returnedContents, type ReturnedContents } from "./returned-contents.js";
+import { contentByteLimit, returnedContents, type ReturnedContents } from "./returned-contents.js";
 import { equalBytes as equal, verifyFinalState, type ExpectedState, type VerificationFailure } from "./verification.js";
 
 /** A source line is an offset range, not a normalized copy of its contents. */
@@ -171,7 +171,7 @@ function render(source: Source, changes: Change[]): string {
   return source.bom + output.join("");
 }
 
-export type PatchOptions = { returnContents?: boolean };
+export type PatchOptions = { returnContents?: number };
 export type PatchResult = {
   text: string; added: string[]; modified: string[]; deleted: string[]; unchanged: string[];
   verification: { status: "passed"; checkedPaths: number };
@@ -254,6 +254,7 @@ async function perform(
 }
 
 async function execute(input: string, cwd: string, fs: PatchFileSystem, preflight: boolean, options: PatchOptions): Promise<PatchResult> {
+  const byteLimit = contentByteLimit(options.returnContents);
   let edits: FileEdit[] = [];
   const paths = new Map<string, { label: string; written: boolean }>();
   const initial = new Map<string, { kind: string; data?: Uint8Array } | null>();
@@ -340,10 +341,10 @@ async function execute(input: string, cwd: string, fs: PatchFileSystem, prefligh
   result.text = "Success. Verified final file bytes and expected path presence/absence for all touched paths.\n";
   const rows = [["A", result.added], ["M", result.modified], ["D", result.deleted], ["N", result.unchanged]] as const;
   for (const [label, paths] of rows) for (const path of paths) result.text += `${label} ${path}\n`;
-  if (options.returnContents) {
+  if (byteLimit > 0) {
     const statuses = new Map(rows.flatMap(([status, names]) => names.map(name => [name, status] as const)));
-    result.contents = returnedContents(paths, observed, statuses);
-    result.text += "Final contents (JSON; byteLimit applies to combined JSON-encoded content strings):\n"
+    result.contents = returnedContents(paths, observed, statuses, byteLimit);
+    result.text += "Final contents (JSON; byteLimit applies to combined UTF-8 file-content bytes):\n"
       + JSON.stringify(result.contents) + "\n";
   }
   return result;

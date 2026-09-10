@@ -1,6 +1,12 @@
 import type { ObservedState } from "./verification.js";
 
-export const CONTENT_BYTE_LIMIT = 64 * 1024;
+export function contentByteLimit(value: unknown): number {
+  if (value === undefined) return 0;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new Error("returnContents must be a non-negative safe integer byte budget");
+  }
+  return value;
+}
 type Status = "A" | "M" | "D" | "N";
 export type ReturnedFile = { path: string; status: Status } & (
   | { content: string; byteLength: number }
@@ -14,11 +20,11 @@ export function returnedContents(
   paths: Map<string, { label: string }>,
   observed: Map<string, ObservedState>,
   statuses: Map<string, Status>,
+  byteLimit: number,
 ): ReturnedContents {
   const files: ReturnedFile[] = [];
-  let remaining = CONTENT_BYTE_LIMIT;
+  let remaining = byteLimit;
   const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
-  const encoder = new TextEncoder();
   for (const [path, { label }] of paths) {
     const entry = { path: label, status: statuses.get(label)! };
     const state = observed.get(path)!;
@@ -27,20 +33,14 @@ export function returnedContents(
       continue;
     }
     const data = state.data!;
-    // JSON strings cannot be smaller than their UTF-8 data plus two quotes.
-    // Avoid decoding huge files that cannot fit even before JSON escaping.
-    if (data.byteLength + 2 > remaining) {
+    // Count persisted UTF-8 bytes, without decoding files that cannot fit.
+    if (data.byteLength > remaining) {
       files.push({ ...entry, byteLength: data.byteLength, omitted: "size-limit" });
       continue;
     }
     const content = decoder.decode(data);
-    const cost = encoder.encode(JSON.stringify(content)).byteLength;
-    if (cost > remaining) {
-      files.push({ ...entry, byteLength: data.byteLength, omitted: "size-limit" });
-      continue;
-    }
-    remaining -= cost;
+    remaining -= data.byteLength;
     files.push({ ...entry, byteLength: data.byteLength, content });
   }
-  return { byteLimit: CONTENT_BYTE_LIMIT, files };
+  return { byteLimit, files };
 }

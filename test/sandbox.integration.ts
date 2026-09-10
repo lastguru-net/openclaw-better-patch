@@ -53,14 +53,14 @@ test('stable SDK uses the existing Docker sandbox for patch operations and enfor
     await tool.execute('move', { input: wrap('*** Update File: nested/file\n*** Move to: moved/file\n@@\n-old\n+new') });
     assert.equal((await active.fsBridge.readFile({ filePath: `${active.containerWorkdir}/moved/file` })).toString(), 'new\n');
     await assert.rejects(readFile(join(workspace, 'nested/file')), { code: 'ENOENT' });
-    await assert.rejects(tool.execute('escape', { input: wrap('*** Add File: /tmp/escape\n+bad'), returnContents: true }), /outside|escape|workspace/i);
+    await assert.rejects(tool.execute('escape', { input: wrap('*** Add File: /tmp/escape\n+bad'), returnContents: 1000 }), /outside|escape|workspace/i);
     execFileSync('docker', ['exec', active.runtimeId, 'ln', '-s', '/tmp', `${active.containerWorkdir}/link`]);
     await assert.rejects(tool.execute('symlink', { input: wrap('*** Add File: link/escape\n+bad') }), /outside|escape|symlink|workspace/i);
   });
   await t.test('source text, BOM and line endings', async () => {
     await active.fsBridge.writeFile({ filePath: `${active.containerWorkdir}/preserved`, data: '  keep \t\r\nold\r\ntail' });
     const returned = await tool.execute('preserve', {
-      input: wrap('*** Update File: preserved\n@@\n keep\n-old\n+new\n tail'), returnContents: true,
+      input: wrap('*** Update File: preserved\n@@\n keep\n-old\n+new\n tail'), returnContents: 1000,
     });
     assert.deepEqual(returned.details.contents.files, [{
       path: 'preserved', status: 'M', content: '  keep \t\r\nnew\r\ntail',

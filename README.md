@@ -62,9 +62,11 @@ Absolute paths remain subject to OpenClaw's filesystem policy.
 
 ### Returned contents
 
-Set `returnContents: true` alongside `input` to include verified final text.
-It defaults to false and does not affect mandatory verification. No extra
-filesystem reads are needed.
+Set `returnContents` to a positive integer byte budget alongside `input` to
+include verified final text, for example `returnContents: 100000`. Omit it or
+use `0` to return no contents. Negative, fractional, non-finite and unsafe
+integer values are rejected before execution. Mandatory verification is
+unaffected, and no extra filesystem reads are needed.
 
 The response includes a JSON object in the model-facing text and in
 `details.contents`. Its `files` array covers every explicitly named path once,
@@ -73,9 +75,10 @@ Final files, including unchanged files, have complete `content` and UTF-8
 `byteLength`. BOM and line endings are preserved. Deleted or still-missing
 paths have `omitted: "absent"`; recreated directories have `omitted: "directory"`.
 
-Content strings share a 64 KiB JSON-encoded budget, reported as `byteLimit`;
-path/status metadata is separate. Files that do not fit the remaining budget
-have `omitted: "size-limit"` and their full `byteLength`, never partial text.
+Complete files share the requested UTF-8 content-byte budget, reported as
+`byteLimit`; JSON formatting and path/status metadata are separate.
+Files that do not fit the remaining budget have `omitted: "size-limit"` and
+their full `byteLength`, never partial text.
 An omitted file does not consume the budget, so later smaller files can fit.
 Execution or verification failures return no contents and retain their failure
 details; this option does not expose unverified text.

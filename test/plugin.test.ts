@@ -80,7 +80,7 @@ test('sandbox resolution rejects remote placements and stale session identities 
 });
 
 for (const mode of ['corrupt', 'denied', 'write-error'] as const) {
-  for (const returnContents of [false, true]) {
+  for (const returnContents of [0, 1000]) {
     test(`sandbox tool reports ${mode} with returnContents=${returnContents} without host fallback`, async () => {
       const files = new Map<string, Buffer>();
       let reads = 0;
