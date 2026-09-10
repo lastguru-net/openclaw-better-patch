@@ -23,7 +23,7 @@ Chunks use whole lines: \` \` keeps context, \`-\` removes, \`+\` adds. Match co
 - \`@@^ prefix\` after a line beginning with that exact prefix.
 - \`@@@ N\` exactly at original source line N (1-based).
 
-\`*** End of File\` requires matching at EOF. Ambiguous matches fail. Success verifies filesystem results, not intent; failures may leave partial changes.`,
+\`*** End of File\` requires matching at EOF. Ambiguous matches fail. Success means the final filesystem state has been verified, not that the patch fulfills your intent. Failures may leave partial changes.`,
     parameters: {
       type: "object",
       properties: { input: { type: "string", description: "Complete patch text, including Begin/End Patch markers." } },
@@ -59,7 +59,7 @@ export default {
   id: "better-patch",
   name: "Better Patch",
   description: "Reliable file editing for OpenClaw agents, with safer matching and fewer formatting surprises",
-  version: "0.2.0",
+  version: "0.2.1",
   register(api) {
     api.registerTool(ctx => createBetterPatchTool(ctx, sandboxResolver(api)), { name: "better_patch" });
   },

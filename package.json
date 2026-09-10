@@ -1,6 +1,6 @@
 {
   "name": "@lastguru-net/openclaw-better-patch",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Reliable file editing for OpenClaw agents, with safer matching and fewer formatting surprises",
   "type": "module",
   "license": "MIT",

@@ -14,7 +14,7 @@ git clone https://github.com/lastguru-net/openclaw-better-patch.git
 cd openclaw-better-patch
 npm ci
 npm pack
-openclaw plugins install ./lastguru-net-openclaw-better-patch-0.2.0.tgz
+openclaw plugins install ./lastguru-net-openclaw-better-patch-0.2.1.tgz
 ```
 
 If you use a plugin allowlist, add `better-patch` to `plugins.allow`. Allow
