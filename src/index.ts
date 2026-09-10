@@ -12,18 +12,18 @@ export function createBetterPatchTool(ctx: OpenClawPluginToolContext, resolveSan
   return {
     name: "better_patch",
     label: "Better Patch",
-    description: `Wrap operations in \`*** Begin Patch\` and \`*** End Patch\`.
-- \`*** Add File: path\` takes content lines starting with \`+\`.
-- \`*** Delete File: path\` takes no content.
-- \`*** Update File: path\` takes edit chunks, optionally preceded by \`*** Move to: path\`.
+    description: `Create, edit, move or delete files with patches enclosed in \`*** Begin Patch\` and \`*** End Patch\`.
+- \`*** Add File: path\` writes a file; prefix content lines with \`+\`.
+- \`*** Delete File: path\` deletes a file.
+- \`*** Update File: path\` edits a file. To move it, put \`*** Move to: destination\` before its chunks.
 
-Chunks contain whole lines prefixed with a space for context, \`-\` to remove, or \`+\` to add. Start chunks with:
-- \`@@\` to search forward.
-- \`@@ context\` to start after that line.
-- \`@@^ prefix\` to start after an exact prefix match.
-- \`@@@ N\` to target original source line N (1-based).
+Chunks use whole lines: space keeps context, \`-\` removes, \`+\` adds. Match context and removed lines using:
+- \`@@\` from the current position onward.
+- \`@@ context\` after that whole line.
+- \`@@^ prefix\` after a line beginning with that exact prefix.
+- \`@@@ N\` exactly at original source line N (1-based).
 
-\`*** End of File\` anchors at EOF. Ambiguous matches fail. Success verifies filesystem results, not intent; failures may leave partial changes.`,
+\`*** End of File\` requires matching at EOF. Ambiguous matches fail. Success verifies filesystem results, not intent; failures may leave partial changes.`,
     parameters: {
       type: "object",
       properties: { input: { type: "string", description: "Complete patch text, including Begin/End Patch markers." } },
