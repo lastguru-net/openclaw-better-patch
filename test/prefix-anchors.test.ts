@@ -72,7 +72,7 @@ const invalid = [
   ["partial removal remains invalid", "prefix\nold suffix\n", "@@^ prefix\n-old\n+new", /Failed to find expected lines/],
   ["anchor line cannot be removed by its chunk", "prefix paragraph\nlast\n",
     "@@^ prefix\n-prefix paragraph\n+new", /Failed to find expected lines/],
-  ["ordinary anchor remains whole-line", "prefix paragraph\nlast\n", "@@ prefix\n+x", /Failed to find context/],
+  ["ordinary anchor remains whole-line", "prefix paragraph\nlast\n", "@@ prefix\n+x", /Failed to find anchor/],
 ] as const;
 for (const [name, source, body, error] of invalid) {
   test("prefix preflight rejects " + name + " before writes", () => inTemp(async cwd => {

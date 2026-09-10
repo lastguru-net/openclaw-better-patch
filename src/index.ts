@@ -13,13 +13,13 @@ export function createBetterPatchTool(ctx: OpenClawPluginToolContext, resolveSan
     name: "better_patch",
     label: "Better Patch",
     description: `Create, edit, move or delete files with patches enclosed in \`*** Begin Patch\` and \`*** End Patch\`.
-- \`*** Add File: path\` writes a file; prefix content lines with \`+\`.
+- \`*** Add File: path\` creates or overwrites a file; prefix content lines with \`+\`.
 - \`*** Delete File: path\` deletes a file.
 - \`*** Update File: path\` edits a file. To move it, put \`*** Move to: destination\` before its chunks.
 
-Chunks use whole lines: space keeps context, \`-\` removes, \`+\` adds. Match context and removed lines using:
-- \`@@\` from the current position onward.
-- \`@@ context\` after that whole line.
+Chunks use whole lines: \` \` keeps context, \`-\` removes, \`+\` adds. Match context and removed lines using:
+- \`@@\` skipping any number of lines before the match.
+- \`@@ anchor\` after that whole anchor line.
 - \`@@^ prefix\` after a line beginning with that exact prefix.
 - \`@@@ N\` exactly at original source line N (1-based).
 

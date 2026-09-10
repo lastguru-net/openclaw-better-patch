@@ -97,7 +97,7 @@ for (const scenario of [
 }
 
 for (const scenario of [
-  { name: "missing", source: "other\n", error: /Failed to find context/ },
+  { name: "missing", source: "other\n", error: /Failed to find anchor/ },
   { name: "ambiguous", source: "anchor\nanchor\n", error: /Ambiguous match/ },
 ]) {
   test(`insertion-only chunk rejects a ${scenario.name} anchor before writes`, async () => inTemp(async cwd => {

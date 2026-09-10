@@ -45,13 +45,14 @@ A patch can add, update, move or delete multiple files:
 - Use `*** Add File: path` with `+`-prefixed lines to create or overwrite a file.
 - Use `*** Update File: path` for an existing UTF-8 file, optionally followed by
   `*** Move to: path`. Move destinations can also be overwritten.
-- Within update chunks, prefix context with a space, removals with `-`, additions
-  with `+`. Separate chunks with `@@`; `@@ context text` locates a section.
+- Within update chunks, prefix context with ` `, removals with `-`, additions
+  with `+`. Separate chunks with `@@`, allowing any number of source lines to be
+  skipped before matching context and removals. `@@ anchor` locates a whole anchor line.
 - Use `@@^ prefix` to locate a line by its exact literal beginning. One ASCII space
   separates `@@^` from a nonempty prefix; any further spaces, tabs and trailing
   whitespace belong to the prefix. Case and punctuation must match exactly.
   The prefix must match exactly one line from the current source cursor to EOF.
-  Like `@@ context`, it leaves the cursor after that line: insertions go there,
+  Like `@@ anchor`, it leaves the cursor after that line: insertions go there,
   and context/removals search from there. The anchor line itself is unchanged.
 - Use `@@@ N` instead of `@@` to start a chunk at an exact 1-based line number.
   Context and removed text must match exactly there, without whitespace or

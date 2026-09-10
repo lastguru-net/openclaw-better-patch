@@ -100,7 +100,7 @@ function compile(source: Source, blocks: EditBlock[], path: string): Change[] {
   for (const block of blocks) {
     if (block.anchor !== undefined) {
       const anchor = locate(source, [block.anchor], cursor, false, path);
-      if (anchor === undefined) throw new Error(`Failed to find context '${block.anchor}' in ${path}`);
+      if (anchor === undefined) throw new Error(`Failed to find anchor '${block.anchor}' in ${path}`);
       cursor = anchor + 1;
     }
     if (block.prefix !== undefined) cursor = locatePrefix(source, block.prefix, cursor, path) + 1;
