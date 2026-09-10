@@ -12,23 +12,18 @@ export function createBetterPatchTool(ctx: OpenClawPluginToolContext, resolveSan
   return {
     name: "better_patch",
     label: "Better Patch",
-    description: `Wrap patches in \`*** Begin Patch\` and \`*** End Patch\`.
+    description: `Wrap operations in \`*** Begin Patch\` and \`*** End Patch\`.
+- \`*** Add File: path\` takes content lines starting with \`+\`.
+- \`*** Delete File: path\` takes no content.
+- \`*** Update File: path\` takes edit chunks, optionally preceded by \`*** Move to: path\`.
 
-File operations:
-- \`*** Add File: path\` followed by content lines, each starting with \`+\`.
-- \`*** Update File: path\` followed by edit chunks; optionally place \`*** Move to: path\` before the chunks.
-- \`*** Delete File: path\` with no content.
-Adds and moves may overwrite.
+Chunks contain whole lines prefixed with a space for context, \`-\` to remove, or \`+\` to add. Start chunks with:
+- \`@@\` to search forward.
+- \`@@ context\` to start after that line.
+- \`@@^ prefix\` to start after an exact prefix match.
+- \`@@@ N\` to target original source line N (1-based).
 
-Edit chunks:
-Prefix each line with a space for context, \`-\` for removal, or \`+\` for addition. Context and removals require whole source lines.
-- \`@@\` searches forward.
-- \`@@ context\` searches after a unique whole-line anchor.
-- \`@@^ prefix\` searches after a unique literal prefix anchor; one separator space, no trimming.
-- \`@@@ N\` matches exactly at source line N (1-based); insertions go before N.
-Ordinary matching tolerates whitespace and common Unicode punctuation differences; ambiguous matches reject. \`*** End of File\` constrains matching to EOF.
-
-Paths follow workspace policy. Preflight precedes ordered writes; failures may leave partial changes. Success verifies filesystem readback, not edit intent or application correctness.`,
+\`*** End of File\` anchors at EOF. Ambiguous matches fail. Success verifies filesystem results, not intent; failures may leave partial changes.`,
     parameters: {
       type: "object",
       properties: { input: { type: "string", description: "Complete patch text, including Begin/End Patch markers." } },
