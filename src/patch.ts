@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import { parsePatch, type EditBlock, type FileEdit } from "./parser.js";
 import type { PatchFileSystem } from "./filesystem.js";
 import { preflightFileSystem } from "./preflight.js";
+import { returnedContents, type ReturnedContents } from "./returned-contents.js";
 import { equalBytes as equal, verifyFinalState, type ExpectedState, type VerificationFailure } from "./verification.js";
 
 /** A source line is an offset range, not a normalized copy of its contents. */
@@ -170,9 +171,11 @@ function render(source: Source, changes: Change[]): string {
   return source.bom + output.join("");
 }
 
+export type PatchOptions = { returnContents?: boolean };
 export type PatchResult = {
   text: string; added: string[]; modified: string[]; deleted: string[]; unchanged: string[];
   verification: { status: "passed"; checkedPaths: number };
+  contents?: ReturnedContents;
 };
 export type PatchFailureDetails = {
   phase: "preparation" | "execution" | "verification";
@@ -250,7 +253,7 @@ async function perform(
   return true;
 }
 
-async function execute(input: string, cwd: string, fs: PatchFileSystem, preflight: boolean): Promise<PatchResult> {
+async function execute(input: string, cwd: string, fs: PatchFileSystem, preflight: boolean, options: PatchOptions): Promise<PatchResult> {
   let edits: FileEdit[] = [];
   const paths = new Map<string, { label: string; written: boolean }>();
   const initial = new Map<string, { kind: string; data?: Uint8Array } | null>();
@@ -337,8 +340,16 @@ async function execute(input: string, cwd: string, fs: PatchFileSystem, prefligh
   result.text = "Success. Verified final file bytes and expected path presence/absence for all touched paths.\n";
   const rows = [["A", result.added], ["M", result.modified], ["D", result.deleted], ["N", result.unchanged]] as const;
   for (const [label, paths] of rows) for (const path of paths) result.text += `${label} ${path}\n`;
+  if (options.returnContents) {
+    const statuses = new Map(rows.flatMap(([status, names]) => names.map(name => [name, status] as const)));
+    result.contents = returnedContents(paths, observed, statuses);
+    result.text += "Final contents (JSON; byteLimit applies to combined JSON-encoded content strings):\n"
+      + JSON.stringify(result.contents) + "\n";
+  }
   return result;
 }
 
-export const applyVerifiedPatch = (input: string, cwd: string, fs: PatchFileSystem): Promise<PatchResult> => execute(input, cwd, fs, true);
-export const applyPatch = (input: string, cwd: string, fs: PatchFileSystem): Promise<PatchResult> => execute(input, cwd, fs, false);
+export const applyVerifiedPatch = (input: string, cwd: string, fs: PatchFileSystem, options: PatchOptions = {}): Promise<PatchResult> =>
+  execute(input, cwd, fs, true, options);
+export const applyPatch = (input: string, cwd: string, fs: PatchFileSystem, options: PatchOptions = {}): Promise<PatchResult> =>
+  execute(input, cwd, fs, false, options);
