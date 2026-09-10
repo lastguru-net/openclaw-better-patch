@@ -12,18 +12,23 @@ export function createBetterPatchTool(ctx: OpenClawPluginToolContext, resolveSan
   return {
     name: "better_patch",
     label: "Better Patch",
-    description: `Apply multi-file patches inside *** Begin Patch / *** End Patch.
+    description: `Wrap patches in \`*** Begin Patch\` and \`*** End Patch\`.
 
-Files: *** Add File: path (+ lines), *** Update File: path (optional *** Move to: path), *** Delete File: path. Adds/moves may overwrite.
+File operations:
+- \`*** Add File: path\` followed by content lines, each starting with \`+\`.
+- \`*** Update File: path\` followed by edit chunks; optionally place \`*** Move to: path\` before the chunks.
+- \`*** Delete File: path\` with no content.
+Adds and moves may overwrite.
 
-Updates: space/-/+ means context/removal/addition; context and removals require whole source lines.
-- @@: search forward with whitespace/punctuation tolerance.
-- @@ context: continue after a unique whole-line anchor.
-- @@^ prefix: continue after a unique exact prefix; one separator space, no trimming.
-- @@@ N: exact text at 1-based source line N; insertions go before N.
-*** End of File constrains matching to EOF. Ambiguous matches reject.
+Edit chunks:
+Prefix each line with a space for context, \`-\` for removal, or \`+\` for addition. Context and removals require whole source lines.
+- \`@@\` searches forward.
+- \`@@ context\` searches after a unique whole-line anchor.
+- \`@@^ prefix\` searches after a unique literal prefix anchor; one separator space, no trimming.
+- \`@@@ N\` matches exactly at source line N (1-based); insertions go before N.
+Ordinary matching tolerates whitespace and common Unicode punctuation differences; ambiguous matches reject. \`*** End of File\` constrains matching to EOF.
 
-Paths use the workspace and filesystem policy. Ordered preflight precedes writes; failures may leave partial changes. Success verifies filesystem readback, not edit intent or application correctness.`,
+Paths follow workspace policy. Preflight precedes ordered writes; failures may leave partial changes. Success verifies filesystem readback, not edit intent or application correctness.`,
     parameters: {
       type: "object",
       properties: { input: { type: "string", description: "Complete patch text, including Begin/End Patch markers." } },
