@@ -1,6 +1,6 @@
 import type { AnyAgentTool, OpenClawPluginDefinition, OpenClawPluginToolContext } from "openclaw/plugin-sdk/plugin-entry";
 import { resolve } from "node:path";
-import { applyVerifiedPatch } from "./patch.js";
+import { applyVerifiedPatch, PatchError } from "./patch.js";
 import { hostFileSystem } from "./host.js";
 import { sandboxFileSystem, sandboxResolver, type SandboxResolver } from "./sandbox.js";
 
@@ -12,7 +12,7 @@ export function createBetterPatchTool(ctx: OpenClawPluginToolContext, resolveSan
   return {
     name: "better_patch",
     label: "Better Patch",
-    description: "Apply file patches using *** Begin Patch / *** End Patch. Use *** Add File: path with + lines, *** Delete File: path, or *** Update File: path with optional *** Move to: path. Update chunks use @@ or @@ context and space/-/+ for context/removal/addition. Use @@@ N for exact text at a 1-based source line; insertion-only chunks insert before N (line count + 1 appends). Line numbers refer to the source at the start of each update; *** End of File anchors at EOF. Without @@@, insertion-only chunks insert after a textual anchor, otherwise before a trailing blank line or at EOF. Supply enough context for a unique match; whitespace and common Unicode punctuation differences are tolerated. Paths resolve from the agent workspace under its filesystem policy. Adds and moves may overwrite; updates require existing UTF-8 files. Deletes accept binary files and empty directories; missing paths succeed. Operations run in written order with dependency-aware preflight, but I/O failures may leave partial changes.",
+    description: "Apply file patches using *** Begin Patch / *** End Patch. Use *** Add File: path with + lines, *** Delete File: path, or *** Update File: path with optional *** Move to: path. Update chunks use @@ or @@ context and space/-/+ for context/removal/addition. Use @@@ N for exact text at a 1-based source line; insertion-only chunks insert before N (line count + 1 appends). Line numbers refer to the source at the start of each update; *** End of File anchors at EOF. Without @@@, insertion-only chunks insert after a textual anchor, otherwise before a trailing blank line or at EOF. Supply enough context for a unique match; whitespace and common Unicode punctuation differences are tolerated. Paths resolve from the agent workspace under its filesystem policy. Adds and moves may overwrite; updates require existing UTF-8 files. Deletes accept binary files and empty directories; missing paths succeed. Operations run in written order with dependency-aware preflight, but I/O failures may leave partial changes. Success always verifies final file bytes and expected path presence/absence at readback, not crash durability, future state, edit intent or application tests.",
     parameters: {
       type: "object",
       properties: { input: { type: "string", description: "Complete patch text, including Begin/End Patch markers." } },
@@ -31,9 +31,15 @@ export function createBetterPatchTool(ctx: OpenClawPluginToolContext, resolveSan
         ? sandboxFileSystem(sandbox, signal, root ? ctx.fsPolicy?.root ?? sandbox.workspaceDir : undefined)
         : await hostFileSystem(cwd, root, signal);
       const workdir = sandbox?.workspaceDir ?? cwd;
-      const result = await applyVerifiedPatch(params.input, workdir, fs);
-      return { content: [{ type: "text", text: result.text }],
-        details: { added: result.added, modified: result.modified, deleted: result.deleted, unchanged: result.unchanged } };
+      try {
+        const result = await applyVerifiedPatch(params.input, workdir, fs);
+        return { content: [{ type: "text", text: result.text }],
+          details: { added: result.added, modified: result.modified, deleted: result.deleted,
+            unchanged: result.unchanged, verification: result.verification } };
+      } catch (error) {
+        if (!(error instanceof PatchError) || error.details.phase === "preparation") throw error;
+        return { isError: true, content: [{ type: "text", text: error.message }], details: error.details };
+      }
     },
   };
 }

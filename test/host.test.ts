@@ -61,7 +61,8 @@ test("deletion accepts binary files, empty directories and missing paths but not
   for (const path of ["binary", "empty", "absent", "missing/parents/absent", "binary"]) {
     const existed = await lstat(join(cwd, path)).then(() => true, () => false);
     const result = await tool.execute("delete", { input: deletion(path) });
-    assert.deepEqual(result.details, { added: [], modified: [], deleted: existed ? [path] : [], unchanged: existed ? [] : [path] });
+    assert.deepEqual(result.details, { added: [], modified: [], deleted: existed ? [path] : [], unchanged: existed ? [] : [path],
+      verification: { status: "passed", checkedPaths: 1 } });
     await assert.rejects(lstat(join(cwd, path)), { code: "ENOENT" });
   }
   await assert.rejects(tool.execute("nonempty", { input: deletion("nonempty") }), /not empty|ENOTEMPTY/);
