@@ -65,7 +65,22 @@ test('stable SDK uses the existing Docker sandbox for patch operations and enfor
     await active.fsBridge.writeFile({ filePath: `${active.containerWorkdir}/logical`, data: '\uFEFFhead\n\rold' });
     await tool.execute('logical-endings', { input: wrap('*** Update File: logical\n@@\n+before\n head\n-old\n+new\n+') });
     assert.deepEqual(await active.fsBridge.readFile({ filePath: `${active.containerWorkdir}/logical` }),
-      Buffer.from('\uFEFFbefore\n\rhead\n\rnew\n\r\n\r'));
+      Buffer.from('\uFEFFbefore\n\rhead\n\rnew\n\r'));
+  });
+  await t.test('EOF chunks and final-terminator controls', async () => {
+    const path = `${active.containerWorkdir}/eof`;
+    await active.fsBridge.writeFile({ filePath: path, data: '\uFEFFsame\r\nsame' });
+    await tool.execute('eof-append', { input: wrap('*** Update File: eof\n@@.\n same\n+') });
+    assert.deepEqual(await active.fsBridge.readFile({ filePath: path }), Buffer.from('\uFEFFsame\r\nsame\r\n'));
+    const noop = await tool.execute('eof-ensure', { input: wrap('*** Update File: eof\n@@.\n.+') });
+    assert.deepEqual(noop.details, { added: [], modified: [], deleted: [], unchanged: ['eof'],
+      verification: { status: 'passed', checkedPaths: 1 } });
+    await tool.execute('eof-move-strip', { input: wrap('*** Update File: eof\n*** Move to: moved/eof\n@@.\n.-') });
+    assert.equal(await active.fsBridge.stat({ filePath: path }), null);
+    assert.deepEqual(await active.fsBridge.readFile({ filePath: `${active.containerWorkdir}/moved/eof` }),
+      Buffer.from('\uFEFFsame\r\nsame'));
+    await tool.execute('eof-create', { input: wrap('*** Add File: unterminated\n+hello\n*** Update File: unterminated\n@@.\n.-') });
+    assert.deepEqual(await active.fsBridge.readFile({ filePath: `${active.containerWorkdir}/unterminated` }), Buffer.from('hello'));
   });
   await t.test('narrow-root rejection', async () => {
     await active.fsBridge.mkdirp({ filePath: `${active.containerWorkdir}/allowed` });

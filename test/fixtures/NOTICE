@@ -1,7 +1,7 @@
 OpenAI Codex scenario fixtures
 Copyright 2025 OpenAI
 
-The 23 scenario directories in this folder contain 75 files copied from:
+The 22 scenario directories in this folder contain 72 files copied from:
 https://github.com/openai/codex
 Reference: rust-v0.153.4, commit 3d2ee51ca2d5db578f328aa75e20aa22c0197c9a
 Source: codex-rs/apply-patch/tests/fixtures/scenarios/

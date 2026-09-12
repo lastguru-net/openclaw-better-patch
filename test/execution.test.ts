@@ -33,12 +33,30 @@ test("empty patches and missing update context reject without changes", async ()
   assert.equal(await readFile(path, "utf8"), "present\n");
 }));
 
-for (const ending of ["\n", "\r\n"]) {
-  test(`literal quoted wrapper preserves add contents with ${JSON.stringify(ending)} transport`, () => inTemp(async cwd => {
-    const patch = `<<'EOF'\n${wrap("*** Add File: wrapped.txt\n+one\n+two")}\nEOF\n`.replaceAll("\n", ending);
-    const result = await applyPatch(patch, cwd);
-    assert.deepEqual(result.added, ["wrapped.txt"]);
-    assert.equal(await readFile(join(cwd, "wrapped.txt"), "utf8"), "one\ntwo\n");
+for (const opening of ["<<EOF", "<<'EOF'", '<<"EOF"']) {
+  for (const ending of ["\n", "\r\n"]) {
+    test(`literal wrapper ${opening} preserves add contents with ${JSON.stringify(ending)} transport`, () => inTemp(async cwd => {
+      const patch = ` \t${opening}\n${wrap("*** Add File: wrapped.txt\n+one\n+two")}\nEOF \t\n`.replaceAll("\n", ending);
+      const result = await applyPatch(patch, cwd);
+      assert.deepEqual(result.added, ["wrapped.txt"]);
+      assert.equal(await readFile(join(cwd, "wrapped.txt"), "utf8"), "one\ntwo\n");
+    }));
+  }
+}
+
+for (const closing of ["NOTEOF", " EOF", "'EOF'", '"EOF"']) {
+  test(`literal wrapper rejects closing marker ${JSON.stringify(closing)}`, () => inTemp(async cwd => {
+    const input = `<<'EOF'\n${wrap("*** Add File: wrapped.txt\n+inside")}\n${closing}\n`;
+    await assert.rejects(applyPatch(input, cwd), /Invalid patch/);
+    await assert.rejects(readFile(join(cwd, "wrapped.txt")), { code: "ENOENT" });
+  }));
+}
+
+for (const opening of ["<< EOF", "<<'OTHER'", "<<'EOF' "]) {
+  test(`literal wrapper rejects opening marker ${JSON.stringify(opening)}`, () => inTemp(async cwd => {
+    const input = `${opening}\n${wrap("*** Add File: wrapped.txt\n+inside")}\nEOF\n`;
+    await assert.rejects(applyPatch(input, cwd), /Invalid patch/);
+    await assert.rejects(readFile(join(cwd, "wrapped.txt")), { code: "ENOENT" });
   }));
 }
 

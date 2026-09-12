@@ -16,12 +16,6 @@ test("normalizes Unicode punctuation while seeking an update", async () => inTem
   assert.equal(await readFile(join(cwd, "unicode.py"), "utf8"), "import asyncio  # HELLO\n");
 }));
 
-test("an end-of-file marker selects the final repeated match", async () => inTemp(async (cwd) => {
-  await writeFile(join(cwd, "tail.txt"), "same\nmiddle\nsame\n");
-  await applyPatch(wrap("*** Update File: tail.txt\n@@\n-same\n+last\n*** End of File"), cwd);
-  assert.equal(await readFile(join(cwd, "tail.txt"), "utf8"), "same\nmiddle\nlast\n");
-}));
-
 for (const scenario of [
   { name: "exact", source: "same\nsame\n", pattern: "same" },
   { name: "trailing whitespace", source: "same \nsame\t\n", pattern: "same" },
@@ -113,7 +107,7 @@ for (const scenario of [
 
 test("EOF chunks cannot reuse source consumed by an earlier chunk", () => inTemp(async dir => {
   await writeFile(join(dir, "f"), "a\nb\nc\n");
-  await assert.rejects(applyVerifiedPatch(wrap("*** Add File: untouched\n+x\n*** Update File: f\n@@\n-b\n+B\n c\n@@\n-c\n+C\n*** End of File"), dir), /Failed to find expected lines/);
+  await assert.rejects(applyVerifiedPatch(wrap("*** Add File: untouched\n+x\n*** Update File: f\n@@\n-b\n+B\n c\n@@.\n-c\n+C"), dir), /Failed to find expected lines|Overlapping chunks/);
   assert.equal(await readFile(join(dir, "f"), "utf8"), "a\nb\nc\n");
   await assert.rejects(readFile(join(dir, "untouched")), { code: "ENOENT" });
 }));

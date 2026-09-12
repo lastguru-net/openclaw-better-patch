@@ -43,8 +43,6 @@ const cases = [
     "prefix paragraph\nkeep\nnew\n"],
   ["body retains context tolerance", "prefix paragraph\n old \n", "@@^ prefix\n-old\n+new",
     "prefix paragraph\nnew\n"],
-  ["EOF body targets final match", "prefix paragraph\nold\nmiddle\nold\n",
-    "@@^ prefix\n-old\n+new\n*** End of File", "prefix paragraph\nold\nmiddle\nnew\n"],
 ];
 for (const [name, source, body, expected] of cases) {
   test("prefix anchors: " + name, () => inTemp(async cwd => {
@@ -63,7 +61,7 @@ const invalid = [
   ["substring", "before prefix\n", "@@^ prefix\n+x", /Failed to find prefix/],
   ["empty source", "", "@@^ prefix\n+x", /Failed to find prefix/],
   ["ambiguous despite following text", "prefix one\nold\nprefix two\ntarget\n",
-    "@@^ prefix\n-target\n+new\n*** End of File", /Ambiguous prefix anchor.*2 matches/],
+    "@@^ prefix\n-target\n+new", /Ambiguous prefix anchor.*2 matches/],
   ["full-line equality does not outrank longer prefix match", "prefix\nprefix longer\n",
     "@@^ prefix\n+x", /Ambiguous prefix anchor.*2 matches/],
   ["backward anchor", "prefix\nold\n", "@@@ 2\n-old\n+new\n@@^ prefix\n+x", /Failed to find prefix/],

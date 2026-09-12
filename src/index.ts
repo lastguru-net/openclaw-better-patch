@@ -22,8 +22,11 @@ Chunks use whole lines: \` \` keeps context, \`-\` removes, \`+\` adds. Match co
 - \`@@ anchor\` after that whole anchor line.
 - \`@@^ prefix\` after a line beginning with that exact prefix.
 - \`@@@ N\` exactly at original source line N (1-based).
+- \`@@.\` matching the file suffix, or appending at EOF when only adding lines.
 
-\`*** End of File\` requires matching at EOF. Ambiguous matches fail. Success means the final filesystem state has been verified, not that the patch fulfills your intent. Failures may leave partial changes.`,
+Inside \`@@.\` chunks, standalone \`.-\` strips all trailing newline sequences; \`.+\` ensures a final terminator without changing an already terminated tail. Controls apply after all edits in that Update File operation; opposing controls conflict. A control-only chunk is valid.
+
+Matching ignores line terminators. Added lines inherit source endings, with LF for empty files; empty added text follows the same rules. Ambiguous matches fail. Success means the final filesystem state has been verified, not that the patch fulfills your intent. Failures may leave partial changes.`,
     parameters: {
       type: "object",
       properties: { input: { type: "string", description: "Complete patch text, including Begin/End Patch markers." } },

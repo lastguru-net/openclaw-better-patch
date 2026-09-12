@@ -58,9 +58,11 @@ A patch can add, update, move or delete multiple files:
   Context and removed text must match exactly there, without whitespace or
   punctuation tolerance. Numbers refer to the source at the start of that update;
   earlier chunks do not shift them. Insertion-only chunks insert before N;
-  line count + 1 appends. An EOF marker additionally requires the chunk to end at EOF.
+  line count + 1 appends.
 - Without line numbers, context must match uniquely. Add more context or use
-  `*** End of File` after a chunk to select the file ending.
+  `@@.` to match the final source lines. Additions-only `@@.` chunks append after
+  every existing line, including trailing empty lines. Bare `@@` additions-only
+  chunks instead insert before an existing final empty line.
 - `*** Delete File: path` removes a file or empty directory. Missing paths succeed;
   nonempty directories are rejected.
 
@@ -80,8 +82,56 @@ For example, insert a note after a long paragraph without repeating the paragrap
 This matches a unique line beginning `My recommendation is`, preserving the whole
 line and inserting the note after it. Prefix anchors do not enable substring
 edits: context and removed text still require complete source lines. Missing or
-ambiguous prefixes fail preflight before any writes, even if later chunk text or
-an EOF marker could distinguish the candidates.
+ambiguous prefixes fail preflight before any writes, even if later context could
+distinguish the candidates.
+
+### EOF edits and final terminators
+
+An `@@.` chunk matches its context and removed lines against the file suffix,
+ignoring their LF, CRLF, CR or LFCR terminators. It never searches earlier or
+drops unmatched empty context. Additions retain their written position:
+
+```diff
+*** Begin Patch
+*** Update File: notes.md
+@@.
++Inserted before the final line.
+ Last line.
+*** End Patch
+```
+
+Inside `@@.` chunks, use exact standalone `.-` or `.+` directives:
+
+- `.-` removes all trailing newline sequences, including trailing empty lines,
+  but never spaces, tabs or the BOM.
+- `.+` ensures a final terminator. An already terminated tail is unchanged,
+  including its type and any empty lines. Otherwise it uses the inherited ending
+  type, or LF when none is available. Empty/BOM-only output receives LF.
+
+Directives apply after all content edits in that `Update File` operation, including
+when moving the file. They do not match source lines or move the source cursor.
+Repeated identical directives are harmless; opposing directives in one operation
+fail preflight. Separate operations run in written order.
+
+A directive needs no dummy content edit. For example, create an unterminated file:
+
+```diff
+*** Begin Patch
+*** Add File: hello.txt
++hello
+*** Update File: hello.txt
+@@.
+.-
+*** End Patch
+```
+
+The result contains `hello` without a final terminator. To edit text that itself
+looks like a directive, use the usual prefixes, such as `+.-` or ` .+`.
+
+The optional literal wrapper opens with `<<EOF`, `<<'EOF'` or `<<"EOF"` and closes
+with an exact `EOF` line. Surrounding whitespace outside the complete wrapper is
+ignored; extra text or remaining indentation on its closing line is rejected.
+This is literal parsing, not shell execution.
 
 ## Behavior
 
@@ -97,8 +147,17 @@ final-verification mismatches or unavailable readback. Changes are not rolled ba
 Ordinary context matching tolerates whitespace and common Unicode punctuation
 differences; numbered chunks and prefix anchors use exact matching.
 Unchanged text, line endings and a leading UTF-8 BOM are preserved. Inserted lines
-inherit surrounding line endings; new files use LF. The original final-newline
-state is retained except where explicitly added blank lines require a newline.
+inherit the preceding output ending, or the first source ending when inserting at
+the beginning, with LF fallback. Empty and BOM-only files use LF for every added
+line. Otherwise the final output item inherits the original final terminator,
+including its absence, unless a final-terminator directive overrides it.
+
+Empty added text follows the same rendering rule as other text: appending `a` to
+`"last"` yields `"last\na"`, and appending empty text yields `"last\n"`, not two
+newlines. The empty final item has no bytes or terminator of its own. A later
+operation parses the resulting bytes normally; it does not see a synthetic empty
+line after a terminator. For example, `"last\n"` has one terminated line, whereas
+`"last\n\n"` also contains a terminated empty line.
 
 Unchanged operations skip writes. Results report each named path's net change:
 `A` added, `M` modified, `D` deleted, `N` unchanged.

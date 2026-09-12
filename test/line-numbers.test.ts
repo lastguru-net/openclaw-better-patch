@@ -10,10 +10,9 @@ const cases = [
   ['source coordinates', 'a\nb\nc\n', '@@@ 1\n-a\n+x\n+y\n@@@ 3\n-c\n+z', 'x\ny\nb\nz\n'],
   ['insert before first', 'a\n', '@@@ 1\n+x', 'x\na\n'],
   ['append after trailing blank', 'a\n\n', '@@@ 3\n+x', 'a\n\nx\n'],
-  ['empty file', '', '@@@ 1\n+x', 'x'],
+  ['empty file', '', '@@@ 1\n+x', 'x\n'],
   ['text matching after numbered chunk', 'a\nb\nc\n', '@@@ 1\n-a\n+x\n@@\n-b\n+y', 'x\ny\nc\n'],
   ['number after textual anchor', 'a\nb\nc\n', '@@ a\n-b\n+y\n@@@ 3\n-c\n+z', 'a\ny\nz\n'],
-  ['EOF constraint', 'a\nb', '@@@ 2\n-b\n+x\n*** End of File', 'a\nx'],
   ['same-position insertions', 'a\n', '@@@ 1\n+x\n@@@ 1\n+y', 'x\ny\na\n'],
 ];
 for (const [name, source, body, expected] of cases) {
@@ -42,7 +41,6 @@ for (const body of [
   '@@@ 4\n+x',
   '@@@ 3\n-a\n+x',
   '@@@ 2\n-a\n \n+x', // No missing-empty-context fallback.
-  '@@@ 1\n+x\n*** End of File',
   '@@@ 2\n-a\n+x\n@@@ 2\n-a\n+y',
 ]) {
   test(`numbered preflight rejects without writes: ${JSON.stringify(body)}`, () => inTemp(async cwd => {

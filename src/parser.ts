@@ -1,10 +1,11 @@
 // Project provenance and license: see NOTICE.
 export type EditLine = { kind: "keep" | "insert" | "remove"; text: string };
 export type EditBlock = { anchor?: string; prefix?: string; line?: number; atEnd: boolean; lines: EditLine[] };
+export type FinalTerminator = "strip" | "ensure";
 export type FileEdit =
   | { kind: "add"; path: string; contents: string }
   | { kind: "delete"; path: string }
-  | { kind: "update"; path: string; destination?: string; blocks: EditBlock[] };
+  | { kind: "update"; path: string; destination?: string; blocks: EditBlock[]; finalTerminator?: FinalTerminator };
 
 type Token = { raw: string; right: string; stripped: string; number: number };
 type FileRecord = { kind: FileEdit["kind"]; path: string; header: Token; body: Token[] };
@@ -16,13 +17,14 @@ const finish = "*** End Patch";
 
 function tokenize(input: string): Token[] {
   const rows = strip(input).split(/\r\n|\n\r|\r|\n/);
-  const wrapped = rows.length >= 4 && /^<<(?:EOF|'EOF'|"EOF")$/.test(rows[0]) && rows.at(-1)!.endsWith("EOF");
+  const wrapped = /^<<(?:EOF|'EOF'|"EOF")$/.test(rows[0]);
+  if (wrapped && rows.at(-1) !== "EOF") fail("Missing literal heredoc EOF closing marker");
   const payload = wrapped ? rows.slice(1, -1) : rows;
   const tokens = payload.map((raw, index) => ({
     raw, right: raw.replace(/\p{White_Space}+$/u, ""), stripped: strip(raw), number: index + 1,
   }));
-  if (tokens[0].stripped !== "*** Begin Patch") fail("Missing Begin Patch marker");
-  if (tokens.at(-1)!.stripped !== finish) fail("Missing End Patch marker");
+  if (tokens[0]?.stripped !== "*** Begin Patch") fail("Missing Begin Patch marker");
+  if (tokens.at(-1)?.stripped !== finish) fail("Missing End Patch marker");
   return tokens.slice(1);
 }
 
@@ -56,8 +58,7 @@ function records(tokens: Token[]): FileRecord[] {
   return result;
 }
 
-const anchorOf = (token: Token): boolean => token.right === "@@" || token.right.startsWith("@@ ") || token.right.startsWith("@@@") || token.raw.startsWith("@@^");
-const eofOf = (token: Token): boolean => token.right === "*** End of File";
+const anchorOf = (token: Token): boolean => token.right === "@@" || token.right === "@@." || token.right.startsWith("@@ ") || token.right.startsWith("@@@") || token.raw.startsWith("@@^");
 
 function editLine(token: Token): EditLine {
   const prefix = token.raw[0];
@@ -71,24 +72,19 @@ function updateRecord(record: FileRecord): FileEdit {
   const { body } = record;
   const blocks: EditBlock[] = [];
   let destination: string | undefined;
+  let finalTerminator: FinalTerminator | undefined;
   let position = 0;
-  // EOF markers without a block carry no content. A destination declaration
-  // may occur once, anywhere in this otherwise-empty update preamble.
-  while (position < body.length) {
-    const token = body[position];
-    if (eofOf(token)) { position++; continue; }
-    if (destination === undefined && token.right.startsWith("*** Move to: ")) {
-      destination = token.right.slice("*** Move to: ".length);
-      position++;
-      continue;
-    }
-    break;
+  if (body[0]?.right.startsWith("*** Move to: ")) {
+    destination = body[0].right.slice("*** Move to: ".length);
+    position++;
   }
   while (position < body.length) {
     const start = body[position];
     const block: EditBlock = { atEnd: false, lines: [] };
     if (anchorOf(start)) {
-      if (start.right.startsWith("@@@")) {
+      if (start.right === "@@.") {
+        block.atEnd = true;
+      } else if (start.right.startsWith("@@@")) {
         const match = /^@@@ ([1-9][0-9]*)$/.exec(start.raw);
         if (!match || !Number.isSafeInteger(Number(match[1]))) return fail("Expected @@@ followed by a positive safe integer", start);
         block.line = Number(match[1]);
@@ -97,22 +93,28 @@ function updateRecord(record: FileRecord): FileEdit {
         block.prefix = start.raw.slice(4);
       } else if (start.right !== "@@") block.anchor = start.right.slice(3);
       position++;
-    } else if (blocks.length) {
-      fail("Expected an @@ marker after an EOF block", start);
     }
-    while (position < body.length && !anchorOf(body[position]) && !eofOf(body[position])) {
-      block.lines.push(editLine(body[position++]));
+    let hasControl = false;
+    while (position < body.length && !anchorOf(body[position])) {
+      const token = body[position++];
+      if (token.raw === ".-" || token.raw === ".+") {
+        if (!block.atEnd) fail("Final-terminator controls require an @@. chunk", token);
+        const control: FinalTerminator = token.raw === ".-" ? "strip" : "ensure";
+        if (finalTerminator !== undefined && finalTerminator !== control) {
+          fail("Conflicting final-terminator controls in one Update File operation", token);
+        }
+        finalTerminator = control;
+        hasControl = true;
+      } else {
+        block.lines.push(editLine(token));
+      }
     }
-    if (!block.lines.length) fail("Update block is empty", start);
-    if (position < body.length && eofOf(body[position])) {
-      block.atEnd = true;
-      position++;
-      while (position < body.length && body[position].right === "") position++;
-    }
+    if (!block.lines.length && !hasControl) fail("Update block is empty", start);
     blocks.push(block);
   }
   if (!blocks.length) fail("Update file has no edit blocks", record.header);
-  return { kind: "update", path: record.path, ...(destination === undefined ? {} : { destination }), blocks };
+  return { kind: "update", path: record.path, ...(destination === undefined ? {} : { destination }), blocks,
+    ...(finalTerminator === undefined ? {} : { finalTerminator }) };
 }
 
 /** Parse and validate the whole document without accessing the filesystem. */

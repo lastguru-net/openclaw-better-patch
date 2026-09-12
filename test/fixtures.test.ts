@@ -33,7 +33,6 @@ const fixtureResults: Record<string, Omit<PatchResult, "text" | "unchanged" | "v
   "020_delete_file_success": { added: [], modified: [], deleted: ["obsolete.txt"] },
   "020_whitespace_padded_patch_marker_lines": { added: [], modified: ["file.txt"], deleted: [] },
   "021_update_file_deletion_only": { added: [], modified: ["lines.txt"], deleted: [] },
-  "022_update_file_end_of_file_marker": { added: [], modified: ["tail.txt"], deleted: [] },
 };
 
 type TreeEntry = { kind: "directory" } | { kind: "file"; bytes: string };
