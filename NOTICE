@@ -10,7 +10,7 @@ https://github.com/openai/codex
 Reference: rust-v0.153.4, commit 3d2ee51ca2d5db578f328aa75e20aa22c0197c9a
 Reference sources: codex-rs/apply-patch/src/{parser,streaming_parser,seek_sequence,file_update,lib}.rs
 
-The scenario fixtures are copied from Codex and licensed under Apache-2.0.
+The scenario fixtures are adapted from Codex and licensed under Apache-2.0.
 Source: codex-rs/apply-patch/tests/fixtures/scenarios/
 See test/fixtures/NOTICE and LICENSES/Apache-2.0.txt.
 Both license texts and this notice accompany the package.

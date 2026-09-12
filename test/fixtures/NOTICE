@@ -1,12 +1,13 @@
 OpenAI Codex scenario fixtures
 Copyright 2025 OpenAI
 
-The 22 scenario directories in this folder contain 72 files copied from:
+The 20 scenario directories in this folder contain 66 files adapted from:
 https://github.com/openai/codex
 Reference: rust-v0.153.4, commit 3d2ee51ca2d5db578f328aa75e20aa22c0197c9a
 Source: codex-rs/apply-patch/tests/fixtures/scenarios/
 
 These fixtures are licensed under Apache License 2.0, not the project's MIT
 license. The complete license is in ../../LICENSES/Apache-2.0.txt.
-The copied scenario files are unchanged; the project's TypeScript test runner
-supplies expectations for Better Patch's behavior.
+Each retained scenario's patch.txt has been modified to remove its outer patch
+envelope lines. Other retained scenario files are unchanged; the project's
+TypeScript test runner supplies expectations for Better Patch's behavior.

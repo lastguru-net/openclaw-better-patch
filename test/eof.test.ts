@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
-import { applyVerifiedPatch, inTemp, wrap } from "./helpers.js";
+import { applyVerifiedPatch, inTemp } from "./helpers.js";
 
 async function expectUpdate(source: string, body: string, expected: string): Promise<void> {
   await inTemp(async cwd => {
     const path = join(cwd, "file");
     await writeFile(path, source);
-    await applyVerifiedPatch(wrap(`*** Update File: file\n${body}`), cwd);
+    await applyVerifiedPatch(`*** Update File: file\n${body}`, cwd);
     assert.deepEqual(await readFile(path), Buffer.from(expected));
   });
 }
@@ -56,9 +56,8 @@ for (const ending of ["\n", "\r", "\r\n", "\n\r"]) {
 test("EOF suffix mismatch does not search earlier or write preceding operations", () => inTemp(async cwd => {
   const path = join(cwd, "file");
   await writeFile(path, "target\nother\n");
-  await assert.rejects(applyVerifiedPatch(wrap(
-    "*** Add File: untouched\n+new\n*** Update File: file\n@@.\n-target\n+changed",
-  ), cwd), /Failed to find expected lines/);
+  await assert.rejects(applyVerifiedPatch(
+    "*** Add File: untouched\n+new\n*** Update File: file\n@@.\n-target\n+changed", cwd), /Failed to find expected lines/);
   assert.equal(await readFile(path, "utf8"), "target\nother\n");
   await assert.rejects(readFile(join(cwd, "untouched")), { code: "ENOENT" });
 }));
@@ -68,7 +67,7 @@ test("EOF suffix treats a terminated empty line as source content", async () => 
   await inTemp(async cwd => {
     const path = join(cwd, "file");
     await writeFile(path, "last\n");
-    await assert.rejects(applyVerifiedPatch(wrap("*** Update File: file\n@@.\n-"), cwd), /Failed to find expected lines/);
+    await assert.rejects(applyVerifiedPatch("*** Update File: file\n@@.\n-", cwd), /Failed to find expected lines/);
     assert.equal(await readFile(path, "utf8"), "last\n");
   });
 });
@@ -130,9 +129,8 @@ test("repeating the same final terminator control is harmless", () =>
 test("contradictory controls reject preflight before earlier operations write", () => inTemp(async cwd => {
   const path = join(cwd, "file");
   await writeFile(path, "hello");
-  await assert.rejects(applyVerifiedPatch(wrap(
-    "*** Add File: untouched\n+new\n*** Update File: file\n@@.\n.+\n@@.\n.-",
-  ), cwd), /Invalid patch|Contradictory|Conflicting/i);
+  await assert.rejects(applyVerifiedPatch(
+    "*** Add File: untouched\n+new\n*** Update File: file\n@@.\n.+\n@@.\n.-", cwd), /Invalid patch|Contradictory|Conflicting/i);
   assert.equal(await readFile(path, "utf8"), "hello");
   await assert.rejects(readFile(join(cwd, "untouched")), { code: "ENOENT" });
 }));
@@ -140,22 +138,20 @@ test("contradictory controls reject preflight before earlier operations write", 
 test("separate update operations apply opposing controls in order", () => inTemp(async cwd => {
   const path = join(cwd, "file");
   await writeFile(path, "hello");
-  await applyVerifiedPatch(wrap(
-    "*** Update File: file\n@@.\n.+\n*** Update File: file\n@@.\n.-",
-  ), cwd);
+  await applyVerifiedPatch(
+    "*** Update File: file\n@@.\n.+\n*** Update File: file\n@@.\n.-", cwd);
   assert.equal(await readFile(path, "utf8"), "hello");
 }));
 
 test("an Add followed by strip creates an unterminated file", () => inTemp(async cwd => {
-  await applyVerifiedPatch(wrap("*** Add File: file\n+hello\n*** Update File: file\n@@.\n.-"), cwd);
+  await applyVerifiedPatch("*** Add File: file\n+hello\n*** Update File: file\n@@.\n.-", cwd);
   assert.equal(await readFile(join(cwd, "file"), "utf8"), "hello");
 }));
 
 test("a move applies final terminator control to the destination", () => inTemp(async cwd => {
   await writeFile(join(cwd, "source"), "hello\n");
-  await applyVerifiedPatch(wrap(
-    "*** Update File: source\n*** Move to: moved\n@@.\n.-",
-  ), cwd);
+  await applyVerifiedPatch(
+    "*** Update File: source\n*** Move to: moved\n@@.\n.-", cwd);
   assert.equal(await readFile(join(cwd, "moved"), "utf8"), "hello");
   await assert.rejects(readFile(join(cwd, "source")), { code: "ENOENT" });
 }));
@@ -163,7 +159,7 @@ test("a move applies final terminator control to the destination", () => inTemp(
 test("ensure on an already terminated file is reported as unchanged", () => inTemp(async cwd => {
   const path = join(cwd, "file");
   await writeFile(path, "hello\r\n\r\n");
-  const result = await applyVerifiedPatch(wrap("*** Update File: file\n@@.\n.+"), cwd);
+  const result = await applyVerifiedPatch("*** Update File: file\n@@.\n.+", cwd);
   assert.deepEqual(result.unchanged, ["file"]);
   assert.deepEqual(await readFile(path), Buffer.from("hello\r\n\r\n"));
 }));

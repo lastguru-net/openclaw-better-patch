@@ -12,7 +12,7 @@ export function createBetterPatchTool(ctx: OpenClawPluginToolContext, resolveSan
   return {
     name: "better_patch",
     label: "Better Patch",
-    description: `Edit files with \`*** Begin Patch\` ... \`*** End Patch\`.
+    description: `Create, edit, move or delete files. Supply a sequence of file operations:
 
 - \`*** Add File: path\`: create/overwrite from \`+text\` lines.
 - \`*** Delete File: path\`: delete.
@@ -31,7 +31,7 @@ In Add bodies or \`@@.\` chunks, choose \`.-\` to strip all trailing newline seq
 Add uses LF; updates inherit endings (LF if empty). Success includes final-state verification. Failures may leave partial changes.`,
     parameters: {
       type: "object",
-      properties: { input: { type: "string", description: "Complete patch text, including Begin/End Patch markers." } },
+      properties: { input: { type: "string", description: "File operations in patch syntax." } },
       required: ["input"],
       additionalProperties: false,
     },

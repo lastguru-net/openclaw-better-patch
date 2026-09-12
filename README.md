@@ -23,23 +23,22 @@ The plugin does not disable `apply_patch`; agent instructions can prefer `better
 
 ## Usage
 
-Call `better_patch` with an `input` string containing the patch:
+Call `better_patch` with an `input` string containing file operations. Each operation
+runs from its file declaration to the next declaration or the end of the input:
 
 ```json
-{"input":"*** Begin Patch\n*** Add File: hello.txt\n+Hello, world!\n*** End Patch"}
+{"input":"*** Add File: hello.txt\n+Hello, world!"}
 ```
 
 A patch can add, update, move or delete multiple files:
 
 ```diff
-*** Begin Patch
 *** Update File: hello.txt
 *** Move to: greetings/hello.txt
 @@
 -Hello, world!
 +Hello, OpenClaw!
 *** Delete File: obsolete.txt
-*** End Patch
 ```
 
 - Use `*** Add File: path` with `+`-prefixed lines to create or overwrite a file.
@@ -66,17 +65,18 @@ A patch can add, update, move or delete multiple files:
 - `*** Delete File: path` removes a file or empty directory. Missing paths succeed;
   nonempty directories are rejected.
 
+Body-line whitespace is literal, including on the final input line. A final
+transport newline ends that patch line; it does not add an empty context line.
+
 Relative paths start at the agent workspace, not the shell's current directory.
 Absolute paths remain subject to OpenClaw's filesystem policy.
 
 For example, insert a note after a long paragraph without repeating the paragraph:
 
 ```diff
-*** Begin Patch
 *** Update File: notes.md
 @@^ My recommendation is
 +Follow-up note.
-*** End Patch
 ```
 
 This matches a unique line beginning `My recommendation is`, preserving the whole
@@ -92,12 +92,10 @@ ignoring their LF, CRLF, CR or LFCR terminators. It never searches earlier or
 drops unmatched empty context. Additions retain their written position:
 
 ```diff
-*** Begin Patch
 *** Update File: notes.md
 @@.
 +Inserted before the final line.
  Last line.
-*** End Patch
 ```
 
 Inside Add File bodies or `@@.` update chunks, use exact standalone `.-` or `.+`
@@ -117,11 +115,9 @@ fail preflight. Separate operations run in written order.
 A directive needs no dummy content edit. For example, create an unterminated file:
 
 ```diff
-*** Begin Patch
 *** Add File: hello.txt
 +hello
 .-
-*** End Patch
 ```
 
 The result contains `hello` without a final terminator. To edit text that itself

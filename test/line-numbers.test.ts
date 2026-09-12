@@ -3,7 +3,7 @@ import test from 'node:test';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parsePatch } from '../src/parser.js';
-import { applyVerifiedPatch, inTemp, wrap } from './helpers.js';
+import { applyVerifiedPatch, inTemp } from './helpers.js';
 
 const cases = [
   ['select repeated text', 'same\nsame\n', '@@@ 2\n-same\n+new', 'same\nnew\n'],
@@ -18,20 +18,20 @@ const cases = [
 for (const [name, source, body, expected] of cases) {
   test(`numbered chunks: ${name}`, () => inTemp(async cwd => {
     await writeFile(join(cwd, 'file'), source);
-    await applyVerifiedPatch(wrap(`*** Update File: file\n${body}`), cwd);
+    await applyVerifiedPatch(`*** Update File: file\n${body}`, cwd);
     assert.equal(await readFile(join(cwd, 'file'), 'utf8'), expected);
   }));
 }
 for (const ending of ['\n', '\r', '\r\n', '\n\r']) {
   test(`numbered chunks preserve BOM and ${JSON.stringify(ending)}`, () => inTemp(async cwd => {
     await writeFile(join(cwd, 'file'), `\ufeffa${ending}b${ending}`);
-    await applyVerifiedPatch(wrap('*** Update File: file\n@@@ 1\n-a\n+x'), cwd);
+    await applyVerifiedPatch('*** Update File: file\n@@@ 1\n-a\n+x', cwd);
     assert.equal(await readFile(join(cwd, 'file'), 'utf8'), `\ufeffx${ending}b${ending}`);
   }));
 }
 for (const marker of ['@@@', '@@@ 0', '@@@ -1', '@@@ 1.5', '@@@ 1 extra', '@@@ 01', '@@@ 9007199254740992', '@@@ 1 ']) {
   test(`reject invalid numbered marker ${JSON.stringify(marker)}`, () => {
-    assert.throws(() => parsePatch(wrap(`*** Update File: file\n${marker}\n+x`)), /positive safe integer/);
+    assert.throws(() => parsePatch(`*** Update File: file\n${marker}\n+x`), /positive safe integer/);
   });
 }
 for (const body of [
@@ -46,13 +46,13 @@ for (const body of [
   test(`numbered preflight rejects without writes: ${JSON.stringify(body)}`, () => inTemp(async cwd => {
     const source = '“a”\na\n';
     await writeFile(join(cwd, 'file'), source);
-    await assert.rejects(applyVerifiedPatch(wrap(`*** Add File: created\n+new\n*** Update File: file\n${body}`), cwd));
+    await assert.rejects(applyVerifiedPatch(`*** Add File: created\n+new\n*** Update File: file\n${body}`, cwd));
     assert.equal(await readFile(join(cwd, 'file'), 'utf8'), source);
     await assert.rejects(readFile(join(cwd, 'created')), { code: 'ENOENT' });
   }));
 }
 test('numbered chunks use preceding operation contents and support moves', () => inTemp(async cwd => {
-  await applyVerifiedPatch(wrap('*** Add File: file\n+a\n+b\n*** Update File: file\n*** Move to: moved\n@@@ 2\n-b\n+c'), cwd);
+  await applyVerifiedPatch('*** Add File: file\n+a\n+b\n*** Update File: file\n*** Move to: moved\n@@@ 2\n-b\n+c', cwd);
   assert.equal(await readFile(join(cwd, 'moved'), 'utf8'), 'a\nc\n');
   await assert.rejects(readFile(join(cwd, 'file')), { code: 'ENOENT' });
 }));

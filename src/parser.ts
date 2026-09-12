@@ -13,34 +13,31 @@ const fail = (reason: string, token?: Token): never => {
   throw new Error(`Invalid patch${token ? ` at line ${token.number}` : ""}: ${reason}`);
 };
 const strip = (text: string): string => text.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "");
-const finish = "*** End Patch";
 
 function tokenize(input: string): Token[] {
-  const rows = strip(input).split(/\r\n|\n\r|\r|\n/);
+  const trimmed = strip(input);
+  if (!trimmed) return [];
+  const rows = trimmed.split(/\r\n|\n\r|\r|\n/);
   const wrapped = /^<<(?:EOF|'EOF'|"EOF")$/.test(rows[0]);
   if (wrapped && rows.at(-1) !== "EOF") fail("Missing literal heredoc EOF closing marker");
-  const payload = wrapped ? rows.slice(1, -1) : rows;
-  const tokens = payload.map((raw, index) => ({
+  // Only a wrapper protects the payload from whole-input whitespace trimming.
+  // Otherwise preserve the last line's literal text and discard just the empty
+  // split item produced by a final transport newline.
+  const payload = wrapped ? rows.slice(1, -1) : input.split(/\r\n|\n\r|\r|\n/);
+  if (!wrapped && payload.at(-1) === "") payload.pop();
+  return payload.map((raw, index) => ({
     raw, right: raw.replace(/\p{White_Space}+$/u, ""), stripped: strip(raw), number: index + 1,
   }));
-  if (tokens[0]?.stripped !== "*** Begin Patch") fail("Missing Begin Patch marker");
-  if (tokens.at(-1)?.stripped !== finish) fail("Missing End Patch marker");
-  return tokens.slice(1);
 }
 
 /** Separate file records before interpreting their individual bodies. */
 function records(tokens: Token[]): FileRecord[] {
   const result: FileRecord[] = [];
   let active: FileRecord | undefined;
-  for (let index = 0; index < tokens.length; index++) {
-    const token = tokens[index];
+  for (const token of tokens) {
     // In update bodies, leading whitespace belongs to context, including text
-    // that resembles a header. The final envelope marker is an exception.
-    const header = active?.kind === "update" && index !== tokens.length - 1 ? token.right : token.stripped;
-    if (header === finish) {
-      if (tokens.slice(index + 1).some(item => item.stripped !== "")) fail("Content after End Patch marker", token);
-      return result;
-    }
+    // that resembles a header, even on the final input line.
+    const header = active?.kind === "update" ? token.right : token.stripped;
     const declaration = /^\*\*\* (Add|Delete|Update) File: (.+)$/.exec(header);
     if (declaration) {
       active = {

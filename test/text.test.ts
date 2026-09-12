@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
-import { applyPatch, applyVerifiedPatch, inTemp, wrap } from "./helpers.js";
+import { applyPatch, applyVerifiedPatch, inTemp } from "./helpers.js";
 
 test("replacement lines inherit the original first line ending", async () => inTemp(async (cwd) => {
   await writeFile(join(cwd, "crlf.txt"), Buffer.from("one\r\ntwo\r\n"));
-  await applyPatch(wrap("*** Update File: crlf.txt\n@@\n-one\n+uno"), cwd);
+  await applyPatch("*** Update File: crlf.txt\n@@\n-one\n+uno", cwd);
   assert.deepEqual(await readFile(join(cwd, "crlf.txt")), Buffer.from("uno\r\ntwo\r\n"));
 }));
 
@@ -59,14 +59,14 @@ for (const scenario of preservationCases) {
   test(`preserves source: ${scenario.name}`, async () => inTemp(async (cwd) => {
     const path = join(cwd, "source.txt");
     await writeFile(path, scenario.source);
-    await applyVerifiedPatch(wrap(`*** Update File: source.txt\n@@\n${scenario.body}`), cwd);
+    await applyVerifiedPatch(`*** Update File: source.txt\n@@\n${scenario.body}`, cwd);
     assert.deepEqual(await readFile(path), Buffer.from(scenario.expected));
   }));
 }
 
 test("moves preserve source context and absent final newline", async () => inTemp(async (cwd) => {
   await writeFile(join(cwd, "source.txt"), "  keep\r\nold");
-  await applyVerifiedPatch(wrap("*** Update File: source.txt\n*** Move to: moved.txt\n@@\n keep\n-old\n+new"), cwd);
+  await applyVerifiedPatch("*** Update File: source.txt\n*** Move to: moved.txt\n@@\n keep\n-old\n+new", cwd);
   assert.deepEqual(await readFile(join(cwd, "moved.txt")), Buffer.from("  keep\r\nnew"));
   await assert.rejects(readFile(join(cwd, "source.txt")), { code: "ENOENT" });
 }));
@@ -76,17 +76,17 @@ const logicalEndings = ["\n", "\r", "\r\n", "\n\r"];
 for (const ending of logicalEndings) {
   test(`logical matching and output inheritance for ${JSON.stringify(ending)}`, () => inTemp(async dir => {
     await writeFile(join(dir, "f"), `head${ending}old${ending}tail${ending}`);
-    await applyVerifiedPatch(wrap("*** Update File: f\n@@ head\n-old\n+new\n tail"), dir);
+    await applyVerifiedPatch("*** Update File: f\n@@ head\n-old\n+new\n tail", dir);
     assert.equal(await readFile(join(dir, "f"), "utf8"), `head${ending}new${ending}tail${ending}`);
   }));
   test(`patch transport accepts ${JSON.stringify(ending)}`, () => inTemp(async dir => {
     await writeFile(join(dir, "f"), "old\n");
-    await applyVerifiedPatch(wrap("*** Update File: f\n@@\n-old\n+new").replaceAll("\n", ending), dir);
+    await applyVerifiedPatch("*** Update File: f\n@@\n-old\n+new".replaceAll("\n", ending), dir);
     assert.equal(await readFile(join(dir, "f"), "utf8"), "new\n");
   }));
   test(`explicit blank tail inherits ${JSON.stringify(ending)}`, () => inTemp(async dir => {
     await writeFile(join(dir, "f"), `head${ending}old`);
-    await applyVerifiedPatch(wrap("*** Update File: f\n@@\n-old\n+new\n+\n+"), dir);
+    await applyVerifiedPatch("*** Update File: f\n@@\n-old\n+new\n+\n+", dir);
     assert.equal(await readFile(join(dir, "f"), "utf8"), `head${ending}new${ending}${ending}`);
   }));
 }
@@ -95,7 +95,7 @@ for (const body of ["@@\n-target\n+new", "@@ target\n+new"]) {
   test(`mixed endings do not hide ambiguity: ${JSON.stringify(body)}`, () => inTemp(async dir => {
     const original = logicalEndings.map(ending => `target${ending}`).join("");
     await writeFile(join(dir, "f"), original);
-    await assert.rejects(applyVerifiedPatch(wrap(`*** Update File: f\n${body}`), dir), /4 matches at exact tolerance/);
+    await assert.rejects(applyVerifiedPatch(`*** Update File: f\n${body}`, dir), /4 matches at exact tolerance/);
     assert.equal(await readFile(join(dir, "f"), "utf8"), original);
   }));
 }
@@ -113,21 +113,21 @@ for (const [name, original, body, expected] of [
 ] as const) {
   test(`file metadata and explicit lines: ${name}`, () => inTemp(async dir => {
     await writeFile(join(dir, "f"), original);
-    await applyVerifiedPatch(wrap(`*** Update File: f\n${body}`), dir);
+    await applyVerifiedPatch(`*** Update File: f\n${body}`, dir);
     assert.equal(await readFile(join(dir, "f"), "utf8"), expected);
   }));
 }
 
 test("moves preserve BOM and empty-addition ending inheritance", () => inTemp(async dir => {
   await writeFile(join(dir, "f"), "\uFEFFold");
-  await applyVerifiedPatch(wrap("*** Update File: f\n*** Move to: moved\n@@\n-old\n+new\n+"), dir);
+  await applyVerifiedPatch("*** Update File: f\n*** Move to: moved\n@@\n-old\n+new\n+", dir);
   assert.equal(await readFile(join(dir, "moved"), "utf8"), "\uFEFFnew\n");
 }));
 
 for (const [source, expected] of [["", "first\nsecond\n"], ["a\n\n", "a\nfirst\nsecond\n\n"]]) {
   test(`same-position insertions retain patch order in ${JSON.stringify(source)}`, () => inTemp(async dir => {
     await writeFile(join(dir, "f"), source);
-    await applyVerifiedPatch(wrap("*** Update File: f\n@@\n+first\n@@\n+second"), dir);
+    await applyVerifiedPatch("*** Update File: f\n@@\n+first\n@@\n+second", dir);
     assert.equal(await readFile(join(dir, "f"), "utf8"), expected);
   }));
 }

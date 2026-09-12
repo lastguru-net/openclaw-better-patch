@@ -2,17 +2,17 @@ import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
-import { applyPatch, applyVerifiedPatch, inTemp, wrap } from "./helpers.js";
+import { applyPatch, applyVerifiedPatch, inTemp } from "./helpers.js";
 
 test("matches update context with trailing and surrounding whitespace", async () => inTemp(async (cwd) => {
   await writeFile(join(cwd, "space.txt"), "tail   \n  both\t\n");
-  await applyPatch(wrap("*** Update File: space.txt\n@@\n-tail\n+TAIL\n@@\n-both\n+BOTH"), cwd);
+  await applyPatch("*** Update File: space.txt\n@@\n-tail\n+TAIL\n@@\n-both\n+BOTH", cwd);
   assert.equal(await readFile(join(cwd, "space.txt"), "utf8"), "TAIL\nBOTH\n");
 }));
 
 test("normalizes Unicode punctuation while seeking an update", async () => inTemp(async (cwd) => {
   await writeFile(join(cwd, "unicode.py"), "import asyncio  # local import \u2013 avoids top\u2011level dep\n");
-  await applyPatch(wrap("*** Update File: unicode.py\n@@\n-import asyncio  # local import - avoids top-level dep\n+import asyncio  # HELLO"), cwd);
+  await applyPatch("*** Update File: unicode.py\n@@\n-import asyncio  # local import - avoids top-level dep\n+import asyncio  # HELLO", cwd);
   assert.equal(await readFile(join(cwd, "unicode.py"), "utf8"), "import asyncio  # HELLO\n");
 }));
 
@@ -25,9 +25,8 @@ for (const scenario of [
   test(`rejects ambiguous ${scenario.name} matches before any writes`, async () => inTemp(async cwd => {
     const path = join(cwd, "source.txt");
     await writeFile(path, scenario.source);
-    await assert.rejects(applyVerifiedPatch(wrap(
-      `*** Add File: new.txt\n+new\n*** Update File: source.txt\n@@\n-${scenario.pattern}\n+changed`,
-    ), cwd), error => {
+    await assert.rejects(applyVerifiedPatch(
+      `*** Add File: new.txt\n+new\n*** Update File: source.txt\n@@\n-${scenario.pattern}\n+changed`, cwd), error => {
       assert.ok(error instanceof Error);
       assert.ok(error.message.includes(`Ambiguous match in ${path}: 2 matches at ${scenario.name} tolerance`));
       return true;
@@ -51,7 +50,7 @@ for (const scenario of [
 ]) {
   test(`matching: ${scenario.name}`, async () => inTemp(async cwd => {
     await writeFile(join(cwd, "source.txt"), scenario.source);
-    await applyVerifiedPatch(wrap(`*** Update File: source.txt\n${scenario.body}`), cwd);
+    await applyVerifiedPatch(`*** Update File: source.txt\n${scenario.body}`, cwd);
     assert.equal(await readFile(join(cwd, "source.txt"), "utf8"), scenario.expected);
   }));
 }
@@ -64,7 +63,7 @@ for (const scenario of [
   test(`rejects ${scenario.name}`, async () => inTemp(async cwd => {
     const path = join(cwd, "source.txt");
     await writeFile(path, scenario.source);
-    await assert.rejects(applyVerifiedPatch(wrap(`*** Update File: source.txt\n${scenario.body}`), cwd), /Ambiguous match/);
+    await assert.rejects(applyVerifiedPatch(`*** Update File: source.txt\n${scenario.body}`, cwd), /Ambiguous match/);
     assert.equal(await readFile(path, "utf8"), scenario.source);
   }));
 }
@@ -85,7 +84,7 @@ for (const scenario of [
   test(`insertion-only chunk respects ${scenario.name}`, async () => inTemp(async cwd => {
     const path = join(cwd, "source.txt");
     await writeFile(path, scenario.source);
-    await applyVerifiedPatch(wrap(`*** Update File: source.txt\n${scenario.body}`), cwd);
+    await applyVerifiedPatch(`*** Update File: source.txt\n${scenario.body}`, cwd);
     assert.equal(await readFile(path, "utf8"), scenario.expected);
   }));
 }
@@ -97,9 +96,8 @@ for (const scenario of [
   test(`insertion-only chunk rejects a ${scenario.name} anchor before writes`, async () => inTemp(async cwd => {
     const path = join(cwd, "source.txt");
     await writeFile(path, scenario.source);
-    await assert.rejects(applyVerifiedPatch(wrap(
-      "*** Add File: new.txt\n+new\n*** Update File: source.txt\n@@ anchor\n+inserted",
-    ), cwd), scenario.error);
+    await assert.rejects(applyVerifiedPatch(
+      "*** Add File: new.txt\n+new\n*** Update File: source.txt\n@@ anchor\n+inserted", cwd), scenario.error);
     assert.equal(await readFile(path, "utf8"), scenario.source);
     await assert.rejects(readFile(join(cwd, "new.txt")), { code: "ENOENT" });
   }));
@@ -107,22 +105,21 @@ for (const scenario of [
 
 test("EOF chunks cannot reuse source consumed by an earlier chunk", () => inTemp(async dir => {
   await writeFile(join(dir, "f"), "a\nb\nc\n");
-  await assert.rejects(applyVerifiedPatch(wrap("*** Add File: untouched\n+x\n*** Update File: f\n@@\n-b\n+B\n c\n@@.\n-c\n+C"), dir), /Failed to find expected lines|Overlapping chunks/);
+  await assert.rejects(applyVerifiedPatch("*** Add File: untouched\n+x\n*** Update File: f\n@@\n-b\n+B\n c\n@@.\n-c\n+C", dir), /Failed to find expected lines|Overlapping chunks/);
   assert.equal(await readFile(join(dir, "f"), "utf8"), "a\nb\nc\n");
   await assert.rejects(readFile(join(dir, "untouched")), { code: "ENOENT" });
 }));
 
 test("an unanchored insertion cannot intersect a consumed trailing blank", () => inTemp(async dir => {
   await writeFile(join(dir, "f"), "a\n\n");
-  await assert.rejects(applyVerifiedPatch(wrap("*** Update File: f\n@@\n-a\n+A\n \n@@\n+tail"), dir), /Overlapping chunks/);
+  await assert.rejects(applyVerifiedPatch("*** Update File: f\n@@\n-a\n+A\n \n@@\n+tail", dir), /Overlapping chunks/);
   assert.equal(await readFile(join(dir, "f"), "utf8"), "a\n\n");
 }));
 
 for (const ending of ["\n", "\r\n"]) {
   test(`unanchored addition precedes a trailing blank with ${JSON.stringify(ending)}`, () => inTemp(async dir => {
     await writeFile(join(dir, "f"), `a${ending}${ending}`);
-    await applyVerifiedPatch(wrap("*** Update File: f\n@@\n+new"), dir);
+    await applyVerifiedPatch("*** Update File: f\n@@\n+new", dir);
     assert.equal(await readFile(join(dir, "f"), "utf8"), `a${ending}new${ending}${ending}`);
   }));
 }
-

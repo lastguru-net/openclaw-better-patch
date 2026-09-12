@@ -13,7 +13,7 @@ test("host patches a 65 MiB file", async t => {
   const prefix = "x".repeat(65 * 1024 * 1024) + "\n";
   await writeFile(path, prefix + "old\n");
   const tool = createBetterPatchTool({ workspaceDir: cwd })!;
-  await tool.execute("large", { input: "*** Begin Patch\n*** Update File: large\n@@\n-old\n+new\n*** End Patch" });
+  await tool.execute("large", { input: "*** Update File: large\n@@\n-old\n+new" });
   assert.equal(await readFile(path, "utf8"), prefix + "new\n");
 });
 
@@ -57,7 +57,7 @@ test("deletion accepts binary files, empty directories and missing paths but not
   await mkdir(join(cwd, "nonempty"));
   await writeFile(join(cwd, "nonempty/keep"), "keep");
   const tool = createBetterPatchTool({ workspaceDir: cwd, fsPolicy: { workspaceOnly: true } })!;
-  const deletion = (path: string) => `*** Begin Patch\n*** Delete File: ${path}\n*** End Patch`;
+  const deletion = (path: string) => `*** Delete File: ${path}`;
   for (const path of ["binary", "empty", "absent", "missing/parents/absent", "binary"]) {
     const existed = await lstat(join(cwd, path)).then(() => true, () => false);
     const result = await tool.execute("delete", { input: deletion(path) });
