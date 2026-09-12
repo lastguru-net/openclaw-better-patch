@@ -1,6 +1,6 @@
 // Project provenance and license: see NOTICE.
 import { dirname } from "node:path";
-import { parsePatch, type EditBlock, type FileEdit } from "./parser.js";
+import { parsePatch, type EditBlock, type FileEdit, type FinalTerminator } from "./parser.js";
 import type { PatchFileSystem } from "./filesystem.js";
 import { preflightFileSystem } from "./preflight.js";
 import { equalBytes as equal, verifyFinalState, type ExpectedState, type VerificationFailure } from "./verification.js";
@@ -71,7 +71,7 @@ function locate(source: Source, expected: string[], cursor: number, atEnd: boole
   }
   if (count > 1) {
     const tier = ["exact", "trailing whitespace", "surrounding whitespace", "Unicode punctuation"][best];
-    throw new Error(`Ambiguous match in ${path}: ${count} matches at ${tier} tolerance. Supply a unique anchor, more context, or an EOF marker.`);
+    throw new Error(`Ambiguous match in ${path}: ${count} matches at ${tier} tolerance. Supply a unique anchor, more context, or an @@. EOF chunk.`);
   }
   return winner;
 }
@@ -98,6 +98,8 @@ function compile(source: Source, blocks: EditBlock[], path: string): Change[] {
   const changes: Change[] = [];
   let cursor = 0;
   for (const block of blocks) {
+    // File-level terminator directives neither match lines nor move the cursor.
+    if (!block.lines.length) continue;
     if (block.anchor !== undefined) {
       const anchor = locate(source, [block.anchor], cursor, false, path);
       if (anchor === undefined) throw new Error(`Failed to find anchor '${block.anchor}' in ${path}`);
@@ -115,16 +117,13 @@ function compile(source: Source, blocks: EditBlock[], path: string): Change[] {
       if (!expected.every((text, offset) => source.matchText(position! + offset) === text)) {
         throw new Error(`Exact text mismatch at line ${block.line} in ${path}`);
       }
-      if (block.atEnd && position + consumed !== source.size) {
-        throw new Error(`Chunk at line ${block.line} does not reach EOF in ${path}`);
-      }
       cursor = position + consumed;
     } else if (consumed === 0) {
       const append = source.size && source.raw(source.size - 1) === source.ending(source.size - 1) ? source.size - 1 : source.size;
-      position = block.anchor === undefined && block.prefix === undefined ? append : cursor;
+      position = block.atEnd ? source.size : block.anchor === undefined && block.prefix === undefined ? append : cursor;
     } else {
       position = locate(source, expected, cursor, block.atEnd, path);
-      if (position === undefined && expected[consumed - 1] === "") {
+      if (!block.atEnd && position === undefined && expected[consumed - 1] === "") {
         consumed--;
         position = locate(source, expected.slice(0, consumed), cursor, block.atEnd, path);
       }
@@ -154,7 +153,19 @@ function compile(source: Source, blocks: EditBlock[], path: string): Change[] {
   return changes;
 }
 
-function render(source: Source, changes: Change[]): string {
+function finalize(content: string, control?: FinalTerminator, inherited = "\n"): string {
+  if (control === "strip") {
+    let end = content.length;
+    while (end && (content[end - 1] === "\r" || content[end - 1] === "\n")) end--;
+    return content.slice(0, end);
+  }
+  if (control === "ensure" && !content.endsWith("\r") && !content.endsWith("\n")) {
+    return content + (content ? inherited : "\n");
+  }
+  return content;
+}
+
+function render(source: Source, changes: Change[], finalTerminator?: FinalTerminator): string {
   const pieces: Piece[] = [];
   let cursor = 0;
   for (const change of changes) {
@@ -163,7 +174,7 @@ function render(source: Source, changes: Change[]): string {
     cursor = change.position + change.consumed;
   }
   if (cursor < source.size) pieces.push({ first: cursor, count: source.size - cursor });
-  const finalEnding = source.size ? source.ending(source.size - 1) : "";
+  const finalEnding = source.size ? source.ending(source.size - 1) : "\n";
   const size = pieces.reduce((total, piece) => total + piece.count, 0);
   let emitted = 0;
   let inherited = source.size ? source.ending(0) || "\n" : "\n";
@@ -174,13 +185,12 @@ function render(source: Source, changes: Change[]): string {
       const ending = typeof token === "number" ? source.ending(token) : "";
       const raw = typeof token === "number" ? source.raw(token) : token;
       const text = raw.slice(0, raw.length - ending.length);
-      const explicitEmpty = typeof token === "string" && token === "";
-      const chosen = ++emitted === size ? finalEnding || (explicitEmpty ? inherited : "") : ending || inherited;
+      const chosen = ++emitted === size ? finalEnding : ending || inherited;
       if (chosen) inherited = chosen;
       output.push(text + chosen);
     }
   }
-  return source.bom + output.join("");
+  return source.bom + finalize(output.join(""), finalTerminator, inherited);
 }
 
 export type PatchResult = {
@@ -204,7 +214,7 @@ export class PatchError extends Error {
 }
 const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
 
-async function revised(source: string, blocks: EditBlock[], fs: PatchFileSystem): Promise<{ original: Uint8Array; content: string }> {
+async function revised(source: string, blocks: EditBlock[], fs: PatchFileSystem, finalTerminator?: FinalTerminator): Promise<{ original: Uint8Array; content: string }> {
   let original: Uint8Array;
   let text: string;
   try {
@@ -212,7 +222,7 @@ async function revised(source: string, blocks: EditBlock[], fs: PatchFileSystem)
     text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(original);
   } catch (cause) { throw new Error(`Failed to read file to update ${source}: ${(cause as Error).message}`, { cause }); }
   const document = new Source(text);
-  return { original, content: render(document, compile(document, blocks, source)) };
+  return { original, content: render(document, compile(document, blocks, source), finalTerminator) };
 }
 
 async function perform(
@@ -238,13 +248,14 @@ async function perform(
     try { onMutation?.(); await fs.remove(source); }
     catch (cause) { throw new Error(`Failed to delete path ${source}: ${(cause as Error).message}`, { cause }); }
   } else if (edit.kind === "add") {
-    const data = bytes(edit.contents);
+    const content = finalize(edit.contents, edit.finalTerminator);
+    const data = bytes(content);
     expected?.set(source, { kind: "file", data });
     const info = await fs.inspect(source);
     if (info?.kind === "file" && equal(await fs.read(source), data)) return false;
-    await write(source, edit.contents, true);
+    await write(source, content, true);
   } else {
-    const { original, content } = await revised(source, edit.blocks, fs);
+    const { original, content } = await revised(source, edit.blocks, fs, edit.finalTerminator);
     const destination = edit.destination === undefined ? source : fs.resolve(cwd, edit.destination);
     await fs.checkPath(destination);
     const data = bytes(content);

@@ -3,11 +3,11 @@ import test from "node:test";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parsePatch } from "../src/parser.js";
-import { applyVerifiedPatch, inTemp, wrap } from "./helpers.js";
+import { applyVerifiedPatch, inTemp } from "./helpers.js";
 
 for (const prefix of ["paragraph", " paragraph ", "\tparagraph\t", " ", ".*[literal]"]) {
   test("prefix parser preserves " + JSON.stringify(prefix), () => {
-    const [edit] = parsePatch(wrap("*** Update File: file\n@@^ " + prefix + "\n+x"));
+    const [edit] = parsePatch("*** Update File: file\n@@^ " + prefix + "\n+x");
     assert.equal(edit.kind, "update");
     if (edit.kind === "update") assert.deepEqual(edit.blocks, [
       { prefix, atEnd: false, lines: [{ kind: "insert", text: "x" }] },
@@ -17,7 +17,7 @@ for (const prefix of ["paragraph", " paragraph ", "\tparagraph\t", " ", ".*[lite
 for (const marker of ["@@^", "@@^ ", "@@^text", "@@^\ttext"]) {
   test("reject malformed prefix marker " + JSON.stringify(marker), () => {
     for (const before of ["", "@@\n+first\n"]) {
-      assert.throws(() => parsePatch(wrap("*** Update File: file\n" + before + marker + "\n+x")),
+      assert.throws(() => parsePatch("*** Update File: file\n" + before + marker + "\n+x"),
         /one space and a nonempty literal prefix/);
     }
   });
@@ -43,13 +43,11 @@ const cases = [
     "prefix paragraph\nkeep\nnew\n"],
   ["body retains context tolerance", "prefix paragraph\n old \n", "@@^ prefix\n-old\n+new",
     "prefix paragraph\nnew\n"],
-  ["EOF body targets final match", "prefix paragraph\nold\nmiddle\nold\n",
-    "@@^ prefix\n-old\n+new\n*** End of File", "prefix paragraph\nold\nmiddle\nnew\n"],
 ];
 for (const [name, source, body, expected] of cases) {
   test("prefix anchors: " + name, () => inTemp(async cwd => {
     await writeFile(join(cwd, "file"), source);
-    await applyVerifiedPatch(wrap("*** Update File: file\n" + body), cwd);
+    await applyVerifiedPatch("*** Update File: file\n" + body, cwd);
     assert.equal(await readFile(join(cwd, "file"), "utf8"), expected);
   }));
 }
@@ -63,7 +61,7 @@ const invalid = [
   ["substring", "before prefix\n", "@@^ prefix\n+x", /Failed to find prefix/],
   ["empty source", "", "@@^ prefix\n+x", /Failed to find prefix/],
   ["ambiguous despite following text", "prefix one\nold\nprefix two\ntarget\n",
-    "@@^ prefix\n-target\n+new\n*** End of File", /Ambiguous prefix anchor.*2 matches/],
+    "@@^ prefix\n-target\n+new", /Ambiguous prefix anchor.*2 matches/],
   ["full-line equality does not outrank longer prefix match", "prefix\nprefix longer\n",
     "@@^ prefix\n+x", /Ambiguous prefix anchor.*2 matches/],
   ["backward anchor", "prefix\nold\n", "@@@ 2\n-old\n+new\n@@^ prefix\n+x", /Failed to find prefix/],
@@ -77,14 +75,14 @@ const invalid = [
 for (const [name, source, body, error] of invalid) {
   test("prefix preflight rejects " + name + " before writes", () => inTemp(async cwd => {
     await writeFile(join(cwd, "file"), source);
-    await assert.rejects(applyVerifiedPatch(wrap("*** Add File: untouched\n+new\n*** Update File: file\n" + body), cwd), error);
+    await assert.rejects(applyVerifiedPatch("*** Add File: untouched\n+new\n*** Update File: file\n" + body, cwd), error);
     assert.equal(await readFile(join(cwd, "file"), "utf8"), source);
     await assert.rejects(readFile(join(cwd, "untouched")), { code: "ENOENT" });
   }));
 }
 
 test("prefix anchors use earlier operation output and support moves", () => inTemp(async cwd => {
-  await applyVerifiedPatch(wrap("*** Add File: file\n+prefix paragraph\n+old\n*** Update File: file\n*** Move to: moved\n@@^ prefix\n-old\n+new"), cwd);
+  await applyVerifiedPatch("*** Add File: file\n+prefix paragraph\n+old\n*** Update File: file\n*** Move to: moved\n@@^ prefix\n-old\n+new", cwd);
   assert.equal(await readFile(join(cwd, "moved"), "utf8"), "prefix paragraph\nnew\n");
   await assert.rejects(readFile(join(cwd, "file")), { code: "ENOENT" });
 }));

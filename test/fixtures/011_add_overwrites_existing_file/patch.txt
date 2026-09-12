@@ -1,4 +1,2 @@
-*** Begin Patch
 *** Add File: duplicate.txt
 +new content
-*** End Patch

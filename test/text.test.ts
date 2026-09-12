@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
-import { applyPatch, applyVerifiedPatch, inTemp, wrap } from "./helpers.js";
+import { applyPatch, applyVerifiedPatch, inTemp } from "./helpers.js";
 
 test("replacement lines inherit the original first line ending", async () => inTemp(async (cwd) => {
   await writeFile(join(cwd, "crlf.txt"), Buffer.from("one\r\ntwo\r\n"));
-  await applyPatch(wrap("*** Update File: crlf.txt\n@@\n-one\n+uno"), cwd);
+  await applyPatch("*** Update File: crlf.txt\n@@\n-one\n+uno", cwd);
   assert.deepEqual(await readFile(join(cwd, "crlf.txt")), Buffer.from("uno\r\ntwo\r\n"));
 }));
 
@@ -47,11 +47,10 @@ const preservationCases = [
   { name: "unterminated tail context", source: "old\r\n  tail \t", body: "-old\n+new\n tail", expected: "new\r\n  tail \t" },
   { name: "append after unterminated context", source: "keep", body: " keep\n+new", expected: "keep\nnew" },
   { name: "insertion-only append without EOF newline", source: "keep", body: "+new", expected: "keep\nnew" },
-  { name: "empty source insertion", source: "", body: "+new", expected: "new" },
-  { name: "explicit trailing blank lines survive", source: "old", body: "-old\n+new\n+\n+", expected: "new\n\n\n" },
+  { name: "empty source insertion", source: "", body: "+new", expected: "new\n" },
+  { name: "empty additions follow unterminated source ending inheritance", source: "old", body: "-old\n+new\n+\n+", expected: "new\n\n" },
   { name: "delete entire unterminated file", source: "old", body: "-old", expected: "" },
   { name: "delete last line transfers absent EOF ending to context", source: "keep\r\nold", body: " keep\n-old", expected: "keep" },
-  { name: "EOF matching and omitted empty context", source: "old", body: "-old\n+new\n \n*** End of File", expected: "new" },
   { name: "omitted empty context before addition", source: "old", body: "-old\n \n+new", expected: "new" },
   { name: "multiple chunks preserve separate source context", source: "  a\r\nold\n  b\r\nlast",
     body: " a\n-old\n+new\n@@\n b\n-last\n+end", expected: "  a\r\nnew\r\n  b\r\nend" },
@@ -60,14 +59,14 @@ for (const scenario of preservationCases) {
   test(`preserves source: ${scenario.name}`, async () => inTemp(async (cwd) => {
     const path = join(cwd, "source.txt");
     await writeFile(path, scenario.source);
-    await applyVerifiedPatch(wrap(`*** Update File: source.txt\n@@\n${scenario.body}`), cwd);
+    await applyVerifiedPatch(`*** Update File: source.txt\n@@\n${scenario.body}`, cwd);
     assert.deepEqual(await readFile(path), Buffer.from(scenario.expected));
   }));
 }
 
 test("moves preserve source context and absent final newline", async () => inTemp(async (cwd) => {
   await writeFile(join(cwd, "source.txt"), "  keep\r\nold");
-  await applyVerifiedPatch(wrap("*** Update File: source.txt\n*** Move to: moved.txt\n@@\n keep\n-old\n+new"), cwd);
+  await applyVerifiedPatch("*** Update File: source.txt\n*** Move to: moved.txt\n@@\n keep\n-old\n+new", cwd);
   assert.deepEqual(await readFile(join(cwd, "moved.txt")), Buffer.from("  keep\r\nnew"));
   await assert.rejects(readFile(join(cwd, "source.txt")), { code: "ENOENT" });
 }));
@@ -77,18 +76,18 @@ const logicalEndings = ["\n", "\r", "\r\n", "\n\r"];
 for (const ending of logicalEndings) {
   test(`logical matching and output inheritance for ${JSON.stringify(ending)}`, () => inTemp(async dir => {
     await writeFile(join(dir, "f"), `head${ending}old${ending}tail${ending}`);
-    await applyVerifiedPatch(wrap("*** Update File: f\n@@ head\n-old\n+new\n tail"), dir);
+    await applyVerifiedPatch("*** Update File: f\n@@ head\n-old\n+new\n tail", dir);
     assert.equal(await readFile(join(dir, "f"), "utf8"), `head${ending}new${ending}tail${ending}`);
   }));
   test(`patch transport accepts ${JSON.stringify(ending)}`, () => inTemp(async dir => {
     await writeFile(join(dir, "f"), "old\n");
-    await applyVerifiedPatch(wrap("*** Update File: f\n@@\n-old\n+new").replaceAll("\n", ending), dir);
+    await applyVerifiedPatch("*** Update File: f\n@@\n-old\n+new".replaceAll("\n", ending), dir);
     assert.equal(await readFile(join(dir, "f"), "utf8"), "new\n");
   }));
   test(`explicit blank tail inherits ${JSON.stringify(ending)}`, () => inTemp(async dir => {
     await writeFile(join(dir, "f"), `head${ending}old`);
-    await applyVerifiedPatch(wrap("*** Update File: f\n@@\n-old\n+new\n+\n+"), dir);
-    assert.equal(await readFile(join(dir, "f"), "utf8"), `head${ending}new${ending}${ending}${ending}`);
+    await applyVerifiedPatch("*** Update File: f\n@@\n-old\n+new\n+\n+", dir);
+    assert.equal(await readFile(join(dir, "f"), "utf8"), `head${ending}new${ending}${ending}`);
   }));
 }
 
@@ -96,7 +95,7 @@ for (const body of ["@@\n-target\n+new", "@@ target\n+new"]) {
   test(`mixed endings do not hide ambiguity: ${JSON.stringify(body)}`, () => inTemp(async dir => {
     const original = logicalEndings.map(ending => `target${ending}`).join("");
     await writeFile(join(dir, "f"), original);
-    await assert.rejects(applyVerifiedPatch(wrap(`*** Update File: f\n${body}`), dir), /4 matches at exact tolerance/);
+    await assert.rejects(applyVerifiedPatch(`*** Update File: f\n${body}`, dir), /4 matches at exact tolerance/);
     assert.equal(await readFile(join(dir, "f"), "utf8"), original);
   }));
 }
@@ -106,29 +105,29 @@ for (const [name, original, body, expected] of [
   ["insert before first", "\uFEFFfirst\n", "@@\n+before\n first", "\uFEFFbefore\nfirst\n"],
   ["delete first", "\uFEFFfirst\nsecond", "@@\n-first\n second", "\uFEFFsecond"],
   ["delete all text", "\uFEFFold", "@@\n-old", "\uFEFF"],
-  ["insert into BOM only", "\uFEFF", "@@\n+new", "\uFEFFnew"],
+  ["insert into BOM only", "\uFEFF", "@@\n+new", "\uFEFFnew\n"],
   ["BOM with explicit blank", "\uFEFF", "@@\n+", "\uFEFF\n"],
   ["interior BOM is content", "\uFEFFfirst\n\uFEFFinside", "@@ first\n-\uFEFFinside\n+new", "\uFEFFfirst\nnew"],
   ["empty file blank", "", "@@\n+", "\n"],
-  ["missing empty context preserves additions", "old", "@@\n-old\n \n+new\n+", "new\n\n"],
+  ["missing empty context preserves additions", "old", "@@\n-old\n \n+new\n+", "new\n"],
 ] as const) {
   test(`file metadata and explicit lines: ${name}`, () => inTemp(async dir => {
     await writeFile(join(dir, "f"), original);
-    await applyVerifiedPatch(wrap(`*** Update File: f\n${body}`), dir);
+    await applyVerifiedPatch(`*** Update File: f\n${body}`, dir);
     assert.equal(await readFile(join(dir, "f"), "utf8"), expected);
   }));
 }
 
-test("moves preserve BOM and explicit blank tail", () => inTemp(async dir => {
+test("moves preserve BOM and empty-addition ending inheritance", () => inTemp(async dir => {
   await writeFile(join(dir, "f"), "\uFEFFold");
-  await applyVerifiedPatch(wrap("*** Update File: f\n*** Move to: moved\n@@\n-old\n+new\n+"), dir);
-  assert.equal(await readFile(join(dir, "moved"), "utf8"), "\uFEFFnew\n\n");
+  await applyVerifiedPatch("*** Update File: f\n*** Move to: moved\n@@\n-old\n+new\n+", dir);
+  assert.equal(await readFile(join(dir, "moved"), "utf8"), "\uFEFFnew\n");
 }));
 
-for (const [source, expected] of [["", "first\nsecond"], ["a\n\n", "a\nfirst\nsecond\n\n"]]) {
+for (const [source, expected] of [["", "first\nsecond\n"], ["a\n\n", "a\nfirst\nsecond\n\n"]]) {
   test(`same-position insertions retain patch order in ${JSON.stringify(source)}`, () => inTemp(async dir => {
     await writeFile(join(dir, "f"), source);
-    await applyVerifiedPatch(wrap("*** Update File: f\n@@\n+first\n@@\n+second"), dir);
+    await applyVerifiedPatch("*** Update File: f\n@@\n+first\n@@\n+second", dir);
     assert.equal(await readFile(join(dir, "f"), "utf8"), expected);
   }));
 }

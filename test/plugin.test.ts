@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import plugin, { createBetterPatchTool } from '../src/index.js';
 
-const add = (path: string) => `*** Begin Patch\n*** Add File: ${path}\n+hello\n*** End Patch`;
+const add = (path: string) => `*** Add File: ${path}\n+hello`;
 
 test('registers a per-session factory and edits the workspace through the tool contract', async t => {
   const root = await mkdtemp(join(tmpdir(), 'better-patch-plugin-'));
@@ -50,7 +50,7 @@ test('workspace-only policy rejects traversal, absolute escapes, symlink escapes
     await assert.rejects(tool.execute('dangling', { input: add('dangling/escaped') }), { code: "outside-workspace" });
   }
   await tool.execute('source', { input: add('source') });
-  await assert.rejects(tool.execute('move', { input: '*** Begin Patch\n*** Update File: source\n*** Move to: ../outside/moved\n@@\n-hello\n+bye\n*** End Patch' }), { code: "outside-workspace" });
+  await assert.rejects(tool.execute('move', { input: '*** Update File: source\n*** Move to: ../outside/moved\n@@\n-hello\n+bye' }), { code: "outside-workspace" });
   assert.equal(await readFile(join(root, 'source'), 'utf8'), 'hello\n');
   await assert.rejects(readFile(join(outside, 'escaped')), { code: 'ENOENT' });
 });

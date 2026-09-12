@@ -1,7 +1,5 @@
-*** Begin Patch
 *** Update File: no_newline.txt
 @@
 -no newline at end
 +first line
 +second line
-*** End Patch

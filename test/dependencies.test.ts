@@ -3,7 +3,6 @@ import { mkdtemp, writeFile, readFile, rm, mkdir, symlink, lstat } from 'node:fs
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { wrap } from './helpers.js';
 import { hostFileSystem } from '../src/host.js';
 import { applyVerifiedPatch } from '../src/patch.js';
 const add = (path: string, text: string) => `*** Add File: ${path}\n+${text}`;
@@ -15,7 +14,7 @@ async function setup(t: TestContext) {
   const mutations: string[] = [];
   const fs = { ...base, write: async (...args: Parameters<typeof base.write>) => { mutations.push('write'); return base.write(...args); },
     remove: async (path: string) => { mutations.push('remove'); return base.remove(path); } };
-  return { dir, mutations, run: (body: string) => applyVerifiedPatch(wrap(body), dir, fs) };
+  return { dir, mutations, run: (body: string) => applyVerifiedPatch(body, dir, fs) };
 }
 test('add then update is one added path with final content', async t => {
   const { dir, run } = await setup(t);
@@ -114,7 +113,7 @@ test('pure binary deletion never reads file contents', async t => {
   t.after(() => rm(dir, { recursive: true, force: true }));
   await writeFile(join(dir, 'f'), Buffer.from([255]));
   const base = await hostFileSystem(dir, dir);
-  const result = await applyVerifiedPatch(wrap('*** Delete File: f'), dir, {
+  const result = await applyVerifiedPatch('*** Delete File: f', dir, {
     ...base, read: async () => { throw new Error('delete must not read'); },
   });
   assert.deepEqual(result.deleted, ['f']);

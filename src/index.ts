@@ -12,21 +12,26 @@ export function createBetterPatchTool(ctx: OpenClawPluginToolContext, resolveSan
   return {
     name: "better_patch",
     label: "Better Patch",
-    description: `Create, edit, move or delete files with patches enclosed in \`*** Begin Patch\` and \`*** End Patch\`.
-- \`*** Add File: path\` creates or overwrites a file; prefix content lines with \`+\`.
-- \`*** Delete File: path\` deletes a file.
-- \`*** Update File: path\` edits a file. To move it, put \`*** Move to: destination\` before its chunks.
+    description: `Create, edit, move or delete files. Supply a sequence of file operations:
 
-Chunks use whole lines: \` \` keeps context, \`-\` removes, \`+\` adds. Match context and removed lines using:
-- \`@@\` skipping any number of lines before the match.
-- \`@@ anchor\` after that whole anchor line.
-- \`@@^ prefix\` after a line beginning with that exact prefix.
-- \`@@@ N\` exactly at original source line N (1-based).
+- \`*** Add File: path\`: create/overwrite from \`+text\` lines.
+- \`*** Delete File: path\`: delete.
+- \`*** Update File: path\`: edit; optional \`*** Move to: path\` before chunks.
 
-\`*** End of File\` requires matching at EOF. Ambiguous matches fail. Success means the final filesystem state has been verified, not that the patch fulfills your intent. Failures may leave partial changes.`,
+Update lines: \` text\` keeps, \`-text\` removes, \`+text\` adds. Whole-line matching ignores terminators; ambiguity fails.
+Chunk headers:
+- \`@@\`: search forward for context.
+- \`@@ anchor\`: after a matching whole line.
+- \`@@^ prefix\`: after a line starting with this exact prefix.
+- \`@@@ N\`: exact original-source line N (1-based).
+- \`@@.\`: file suffix; additions-only append at EOF.
+
+In Add bodies or \`@@.\` chunks, choose \`.-\` to strip all trailing newline sequences or \`.+\` to ensure termination. Standalone controls apply after rendering; no content is required.
+
+Add uses LF; updates inherit endings (LF if empty). Success includes final-state verification. Failures may leave partial changes.`,
     parameters: {
       type: "object",
-      properties: { input: { type: "string", description: "Complete patch text, including Begin/End Patch markers." } },
+      properties: { input: { type: "string", description: "File operations in patch syntax." } },
       required: ["input"],
       additionalProperties: false,
     },
