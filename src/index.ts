@@ -28,7 +28,7 @@ Chunk headers:
 
 In Add bodies or \`@@.\` chunks, choose \`.-\` to strip all trailing newline sequences or \`.+\` to ensure termination. Standalone controls apply after rendering; no content is required.
 
-Added lines inherit endings; empty files use LF. Success includes final-state verification. Failures may leave partial changes.`,
+Add uses LF; updates inherit endings (LF if empty). Success includes final-state verification. Failures may leave partial changes.`,
     parameters: {
       type: "object",
       properties: { input: { type: "string", description: "Complete patch text, including Begin/End Patch markers." } },
