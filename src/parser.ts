@@ -3,7 +3,7 @@ export type EditLine = { kind: "keep" | "insert" | "remove"; text: string };
 export type EditBlock = { anchor?: string; prefix?: string; line?: number; atEnd: boolean; lines: EditLine[] };
 export type FinalTerminator = "strip" | "ensure";
 export type FileEdit =
-  | { kind: "add"; path: string; contents: string }
+  | { kind: "add"; path: string; contents: string; finalTerminator?: FinalTerminator }
   | { kind: "delete"; path: string }
   | { kind: "update"; path: string; destination?: string; blocks: EditBlock[]; finalTerminator?: FinalTerminator };
 
@@ -60,6 +60,14 @@ function records(tokens: Token[]): FileRecord[] {
 
 const anchorOf = (token: Token): boolean => token.right === "@@" || token.right === "@@." || token.right.startsWith("@@ ") || token.right.startsWith("@@@") || token.raw.startsWith("@@^");
 
+function controlOf(token: Token, current?: FinalTerminator): FinalTerminator | undefined {
+  const control = token.raw === ".-" ? "strip" : token.raw === ".+" ? "ensure" : undefined;
+  if (control !== undefined && current !== undefined && current !== control) {
+    fail("Conflicting final-terminator controls in one file operation", token);
+  }
+  return control;
+}
+
 function editLine(token: Token): EditLine {
   const prefix = token.raw[0];
   const kind = prefix === "+" ? "insert" : prefix === "-" ? "remove" :
@@ -97,12 +105,9 @@ function updateRecord(record: FileRecord): FileEdit {
     let hasControl = false;
     while (position < body.length && !anchorOf(body[position])) {
       const token = body[position++];
-      if (token.raw === ".-" || token.raw === ".+") {
+      const control = controlOf(token, finalTerminator);
+      if (control !== undefined) {
         if (!block.atEnd) fail("Final-terminator controls require an @@. chunk", token);
-        const control: FinalTerminator = token.raw === ".-" ? "strip" : "ensure";
-        if (finalTerminator !== undefined && finalTerminator !== control) {
-          fail("Conflicting final-terminator controls in one Update File operation", token);
-        }
         finalTerminator = control;
         hasControl = true;
       } else {
@@ -125,10 +130,17 @@ export function parsePatch(input: string): FileEdit[] {
       if (record.body.length) fail("Delete declarations do not accept a body", record.body[0]);
       return { kind: "delete", path: record.path };
     }
+    let finalTerminator: FinalTerminator | undefined;
     const contents = record.body.map(token => {
+      const control = controlOf(token, finalTerminator);
+      if (control !== undefined) {
+        finalTerminator = control;
+        return "";
+      }
       if (!token.raw.startsWith("+")) fail("Add file contents must start with +", token);
       return token.raw.slice(1) + "\n";
     }).join("");
-    return { kind: "add", path: record.path, contents };
+    return { kind: "add", path: record.path, contents,
+      ...(finalTerminator === undefined ? {} : { finalTerminator }) };
   });
 }

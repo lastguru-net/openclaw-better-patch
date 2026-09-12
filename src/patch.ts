@@ -153,6 +153,18 @@ function compile(source: Source, blocks: EditBlock[], path: string): Change[] {
   return changes;
 }
 
+function finalize(content: string, control?: FinalTerminator, inherited = "\n"): string {
+  if (control === "strip") {
+    let end = content.length;
+    while (end && (content[end - 1] === "\r" || content[end - 1] === "\n")) end--;
+    return content.slice(0, end);
+  }
+  if (control === "ensure" && !content.endsWith("\r") && !content.endsWith("\n")) {
+    return content + (content ? inherited : "\n");
+  }
+  return content;
+}
+
 function render(source: Source, changes: Change[], finalTerminator?: FinalTerminator): string {
   const pieces: Piece[] = [];
   let cursor = 0;
@@ -178,15 +190,7 @@ function render(source: Source, changes: Change[], finalTerminator?: FinalTermin
       output.push(text + chosen);
     }
   }
-  let content = output.join("");
-  if (finalTerminator === "strip") {
-    let end = content.length;
-    while (end && (content[end - 1] === "\r" || content[end - 1] === "\n")) end--;
-    content = content.slice(0, end);
-  } else if (finalTerminator === "ensure" && !content.endsWith("\r") && !content.endsWith("\n")) {
-    content += content ? inherited : "\n";
-  }
-  return source.bom + content;
+  return source.bom + finalize(output.join(""), finalTerminator, inherited);
 }
 
 export type PatchResult = {
@@ -244,11 +248,12 @@ async function perform(
     try { onMutation?.(); await fs.remove(source); }
     catch (cause) { throw new Error(`Failed to delete path ${source}: ${(cause as Error).message}`, { cause }); }
   } else if (edit.kind === "add") {
-    const data = bytes(edit.contents);
+    const content = finalize(edit.contents, edit.finalTerminator);
+    const data = bytes(content);
     expected?.set(source, { kind: "file", data });
     const info = await fs.inspect(source);
     if (info?.kind === "file" && equal(await fs.read(source), data)) return false;
-    await write(source, edit.contents, true);
+    await write(source, content, true);
   } else {
     const { original, content } = await revised(source, edit.blocks, fs, edit.finalTerminator);
     const destination = edit.destination === undefined ? source : fs.resolve(cwd, edit.destination);

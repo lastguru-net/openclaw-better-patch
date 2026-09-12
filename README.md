@@ -100,7 +100,8 @@ drops unmatched empty context. Additions retain their written position:
 *** End Patch
 ```
 
-Inside `@@.` chunks, use exact standalone `.-` or `.+` directives:
+Inside Add File bodies or `@@.` update chunks, use exact standalone `.-` or `.+`
+directives:
 
 - `.-` removes all trailing newline sequences, including trailing empty lines,
   but never spaces, tabs or the BOM.
@@ -108,8 +109,8 @@ Inside `@@.` chunks, use exact standalone `.-` or `.+` directives:
   including its type and any empty lines. Otherwise it uses the inherited ending
   type, or LF when none is available. Empty/BOM-only output receives LF.
 
-Directives apply after all content edits in that `Update File` operation, including
-when moving the file. They do not match source lines or move the source cursor.
+Directives apply after all content in that Add File or Update File operation,
+including when moving a file. They do not match source lines or move the source cursor.
 Repeated identical directives are harmless; opposing directives in one operation
 fail preflight. Separate operations run in written order.
 
@@ -119,14 +120,14 @@ A directive needs no dummy content edit. For example, create an unterminated fil
 *** Begin Patch
 *** Add File: hello.txt
 +hello
-*** Update File: hello.txt
-@@.
 .-
 *** End Patch
 ```
 
 The result contains `hello` without a final terminator. To edit text that itself
 looks like a directive, use the usual prefixes, such as `+.-` or ` .+`.
+Add File uses LF before applying its control. A body containing only `.-` creates
+an empty file; only `.+` creates one LF. Controls may appear before or after content.
 
 The optional literal wrapper opens with `<<EOF`, `<<'EOF'` or `<<"EOF"` and closes
 with an exact `EOF` line. Surrounding whitespace outside the complete wrapper is

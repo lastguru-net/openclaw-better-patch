@@ -24,7 +24,7 @@ Chunks use whole lines: \` \` keeps context, \`-\` removes, \`+\` adds. Match co
 - \`@@@ N\` exactly at original source line N (1-based).
 - \`@@.\` matching the file suffix, or appending at EOF when only adding lines.
 
-Inside \`@@.\` chunks, standalone \`.-\` strips all trailing newline sequences; \`.+\` ensures a final terminator without changing an already terminated tail. Controls apply after all edits in that Update File operation; opposing controls conflict. A control-only chunk is valid.
+In Add File bodies or \`@@.\` update chunks, standalone \`.-\` strips all trailing newline sequences; \`.+\` ensures a final terminator without changing an already terminated tail. Controls apply after all content in that file operation; opposing controls conflict. Control-only bodies or chunks are valid.
 
 Matching ignores line terminators. Added lines inherit source endings, with LF for empty files; empty added text follows the same rules. Ambiguous matches fail. Success means the final filesystem state has been verified, not that the patch fulfills your intent. Failures may leave partial changes.`,
     parameters: {

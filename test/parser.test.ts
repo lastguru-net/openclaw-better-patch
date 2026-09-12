@@ -54,6 +54,9 @@ for (const body of [
   "*** Update File: sample\n@@.\n. +",
   "*** Delete File: sample\n+x",
   "*** Add File: sample\ntext",
+  "*** Add File: sample\n+hello\n.- ",
+  "*** Add File: sample\n+hello\n .-",
+  "*** Delete File: sample\n.-",
   "*** Environment ID: remote\n*** Add File: sample\n+x",
 ]) {
   test(`parser rejects malformed record ${JSON.stringify(body)}`, () => {

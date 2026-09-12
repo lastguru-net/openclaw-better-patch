@@ -79,7 +79,7 @@ test('stable SDK uses the existing Docker sandbox for patch operations and enfor
     assert.equal(await active.fsBridge.stat({ filePath: path }), null);
     assert.deepEqual(await active.fsBridge.readFile({ filePath: `${active.containerWorkdir}/moved/eof` }),
       Buffer.from('\uFEFFsame\r\nsame'));
-    await tool.execute('eof-create', { input: wrap('*** Add File: unterminated\n+hello\n*** Update File: unterminated\n@@.\n.-') });
+    await tool.execute('eof-create', { input: wrap('*** Add File: unterminated\n+hello\n.-') });
     assert.deepEqual(await active.fsBridge.readFile({ filePath: `${active.containerWorkdir}/unterminated` }), Buffer.from('hello'));
   });
   await t.test('narrow-root rejection', async () => {
