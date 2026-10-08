@@ -94,3 +94,24 @@ for (const body of [
     assert.throws(() => parsePatch(body), /^Error: Invalid patch/);
   });
 }
+
+test("envelope markers receive a corrective diagnostic in every record position", () => {
+  for (const marker of ["*** Begin Patch", "*** End Patch"]) {
+    for (const prefix of ["", "*** Add File: sample\n+text\n", "*** Update File: sample\n@@\n-old\n+new\n", "*** Delete File: sample\n"]) {
+      assert.throws(() => parsePatch(prefix + marker),
+        /Begin\/End Patch markers are not supported; remove them and supply file operations directly/);
+    }
+  }
+});
+
+test("prefixed envelope-like lines remain literal file content", () => {
+  assert.deepEqual(parsePatch("*** Add File: sample\n+*** Begin Patch\n+*** End Patch"), [{
+    kind: "add", path: "sample", contents: "*** Begin Patch\n*** End Patch\n",
+  }]);
+  assert.deepEqual(parsePatch("*** Update File: sample\n@@\n *** Begin Patch\n-*** End Patch\n+*** Begin Patch\n *** End Patch"), [{
+    kind: "update", path: "sample", blocks: [{ atEnd: false, lines: [
+      { kind: "keep", text: "*** Begin Patch" }, { kind: "remove", text: "*** End Patch" },
+      { kind: "insert", text: "*** Begin Patch" }, { kind: "keep", text: "*** End Patch" },
+    ] }],
+  }]);
+});

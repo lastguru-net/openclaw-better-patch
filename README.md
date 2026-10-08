@@ -23,7 +23,8 @@ The plugin does not disable `apply_patch`; agent instructions can prefer `better
 
 ## Usage
 
-Call `better_patch` with an `input` string containing file operations. Each operation
+Call `better_patch` with an `input` string containing file operations, without
+`*** Begin Patch` / `*** End Patch` markers. Each operation
 runs from its file declaration to the next declaration or the end of the input:
 
 ```json

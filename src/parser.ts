@@ -38,6 +38,9 @@ function records(tokens: Token[]): FileRecord[] {
     // In update bodies, leading whitespace belongs to context, including text
     // that resembles a header, even on the final input line.
     const header = active?.kind === "update" ? token.right : token.stripped;
+    if (header === "*** Begin Patch" || header === "*** End Patch") {
+      fail("Begin/End Patch markers are not supported; remove them and supply file operations directly", token);
+    }
     const declaration = /^\*\*\* (Add|Delete|Update) File: (.+)$/.exec(header);
     if (declaration) {
       active = {

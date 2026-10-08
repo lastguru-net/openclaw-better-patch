@@ -124,3 +124,16 @@ for (const mode of ['corrupt', 'denied', 'write-error'] as const) {
     assert.ok(files.has('/workspace/file'));
   });
 }
+
+test('envelope errors explain the correction through the tool without applying earlier edits', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'better-patch-envelope-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const tool = createBetterPatchTool({ workspaceDir: root })!;
+  await tool.execute('source', { input: add('file.txt') });
+  const update = '*** Update File: file.txt\n@@\n-hello\n+changed';
+  for (const input of [`*** Begin Patch\n${update}\n*** End Patch`, `${update}\n*** End Patch`]) {
+    await assert.rejects(tool.execute('envelope', { input }),
+      /Patch rejected before execution; no changes made\. Invalid patch at line \d+: Begin\/End Patch markers are not supported; remove them and supply file operations directly/);
+    assert.equal(await readFile(join(root, 'file.txt'), 'utf8'), 'hello\n');
+  }
+});
