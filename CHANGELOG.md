@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.1] - 2026-11-21
+
+- Clarify where file operations start and end in the tool description and README.
+- Explain how to remove misplaced Begin/End Patch markers before any edits are applied.
+
 ## [0.3.0] - 2026-09-12
 
 - Add `@@.` chunks for suffix matching and appending after all existing lines, replacing `*** End of File`.
@@ -23,6 +28,7 @@
 
 - Initial release.
 
+[0.3.1]: https://github.com/lastguru-net/openclaw-better-patch/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/lastguru-net/openclaw-better-patch/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/lastguru-net/openclaw-better-patch/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/lastguru-net/openclaw-better-patch/compare/v0.1.0...v0.2.0

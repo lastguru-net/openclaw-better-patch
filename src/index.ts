@@ -64,7 +64,7 @@ export default {
   id: "better-patch",
   name: "Better Patch",
   description: "Reliable file editing for OpenClaw agents, with safer matching and fewer formatting surprises",
-  version: "0.3.0",
+  version: "0.3.1",
   register(api) {
     api.registerTool(ctx => createBetterPatchTool(ctx, sandboxResolver(api)), { name: "better_patch" });
   },
