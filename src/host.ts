@@ -11,12 +11,27 @@ export async function hostFileSystem(cwd: string, allowedRoot?: string, signal?:
   });
   const rel = (path: string) => relative(files.rootDir, path);
   const check = () => signal?.throwIfAborted();
+  // A child of a file is absent now, but an earlier patch operation may
+  // replace that file with a directory. Still require an admitted ancestor.
+  async function probe(path: string): Promise<string | null> {
+    let candidate = path;
+    for (;;) {
+      try {
+        const admitted = await files.resolve(rel(candidate));
+        return candidate === path ? admitted : null;
+      } catch (error) {
+        const reason = error as { code?: string; cause?: { code?: string } };
+        if (reason.code !== "outside-workspace" || reason.cause?.code !== "ENOTDIR" || dirname(candidate) === candidate) throw error;
+        candidate = dirname(candidate);
+      }
+    }
+  }
   return {
     resolve,
     async checkPath(path) {
       check();
       // Advisory preflight only: retain the original spelling for actual I/O.
-      await files.resolve(rel(path));
+      await probe(path);
     },
     async read(path) {
       check();
@@ -32,7 +47,8 @@ export async function hostFileSystem(cwd: string, allowedRoot?: string, signal?:
           const stat = await files.stat("");
           return { kind: stat.isFile ? "file" : stat.isDirectory ? "directory" : "other" };
         }
-        const parent = await files.resolve(rel(dirname(path)));
+        const parent = await probe(dirname(path));
+        if (parent === null) return null;
         const stat = await lstat(join(parent, basename(path)));
         return { kind: stat.isFile() ? "file" : stat.isDirectory() ? "directory" : "other" };
       } catch (error) {

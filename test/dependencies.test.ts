@@ -92,14 +92,15 @@ test('dangling symlink deletion is not a missing-path noop', async t => {
   assert.deepEqual(result.deleted, ['link']); assert.deepEqual(mutations, ['remove']);
   await assert.rejects(lstat(join(dir, 'link')), { code: 'ENOENT' });
 });
-test('unchanged symlink update skips replacement but Add replaces the entry', async t => {
+test('unchanged symlink update skips replacement and host rejects writes to the link', async t => {
   const { dir, run, mutations } = await setup(t);
   await writeFile(join(dir, 'f'), 'one\n'); await symlink('f', join(dir, 'link'));
   const result = await run(update('link', 'one', 'one'));
   assert.deepEqual(result.unchanged, ['link']); assert.deepEqual(mutations, []);
   assert.equal((await lstat(join(dir, 'link'))).isSymbolicLink(), true);
-  const added = await run(add('link', 'one'));
-  assert.deepEqual(added.modified, ['link']); assert.equal((await lstat(join(dir, 'link'))).isSymbolicLink(), false);
+  await assert.rejects(run(add('link', 'two')), { code: 'path-alias' });
+  assert.equal((await lstat(join(dir, 'link'))).isSymbolicLink(), true);
+  assert.equal(await readFile(join(dir, 'f'), 'utf8'), 'one\n');
 });
 test('delete a file then create a child at that path', async t => {
   const { dir, run } = await setup(t);

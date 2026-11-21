@@ -10,7 +10,7 @@
     "url": "git+https://github.com/lastguru-net/openclaw-better-patch.git"
   },
   "engines": {
-    "node": ">=22.22.3"
+    "node": ">=24.16.0 <25 || >=26.1.0"
   },
   "files": [
     "dist",
@@ -25,10 +25,10 @@
       "./dist/index.js"
     ],
     "compat": {
-      "pluginApi": ">=2026.9.2"
+      "pluginApi": ">=2026.11.6"
     },
     "install": {
-      "minHostVersion": ">=2026.9.2"
+      "minHostVersion": ">=2026.11.6"
     }
   },
   "scripts": {
@@ -38,14 +38,14 @@
     "prepack": "npm run build"
   },
   "devDependencies": {
-    "@openclaw/fs-safe": "0.8.1",
-    "@types/node": "^22.0.0",
-    "openclaw": "2026.9.2",
+    "@openclaw/fs-safe": "0.26.13",
+    "@types/node": "^24.0.0",
+    "openclaw": "2026.11.6",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0"
   },
   "peerDependencies": {
-    "openclaw": ">=2026.9.2"
+    "openclaw": ">=2026.11.6"
   },
   "peerDependenciesMeta": {
     "openclaw": {

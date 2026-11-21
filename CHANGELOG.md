@@ -2,6 +2,8 @@
 
 ## [0.3.1] - 2026-11-21
 
+- Require OpenClaw 2026.11.6+ and match its Node.js engine range (`>=24.16.0 <25 || >=26.1.0`).
+- Host writes now reject leaf symlinks in accordance with OpenClaw's filesystem guards.
 - Clarify where file operations start and end in the tool description and README.
 - Explain how to remove misplaced Begin/End Patch markers before any edits are applied.
 

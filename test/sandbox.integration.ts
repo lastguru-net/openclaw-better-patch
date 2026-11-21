@@ -119,7 +119,7 @@ test('stable SDK uses the existing Docker sandbox for patch operations and enfor
     assert.equal(nonempty.details.verification.status, 'not-run');
     assert.match(nonempty.content[0].text, /not empty|ENOTEMPTY/);
     assert.equal((await active.fsBridge.readFile({ filePath: `${active.containerWorkdir}/nonempty/keep` })).toString(), 'keep');
-    await assert.rejects(tool.execute('delete-escape', { input: '*** Delete File: /tmp/absent' }), /outside|escape|workspace/i);
+    await assert.rejects(tool.execute('delete-escape', { input: '*** Delete File: /tmp/absent' }), /Sandbox path is container-only: \/tmp\/absent/);
   });
   await t.test('additional-mount rejection', async () => {
     const extraMount = join(workspace, 'extra-mount'); await mkdir(extraMount);

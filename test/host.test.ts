@@ -43,6 +43,11 @@ test("host metadata inspects binary files, directories, in-root links and missin
   assert.deepEqual(await fs.inspect(join(cwd, "link")), { kind: "other" });
   assert.deepEqual(await fs.inspect(join(cwd, "dangling")), { kind: "other" });
   assert.equal(await fs.inspect(join(cwd, "absent/parents/file")), null);
+  const blockedChild = join(cwd, "binary/child/grandchild");
+  await fs.checkPath(blockedChild);
+  assert.equal(await fs.inspect(blockedChild), null);
+  await assert.rejects(fs.write(blockedChild, "data", true));
+  assert.deepEqual(await readFile(join(cwd, "binary")), Buffer.from([0xff]));
   assert.deepEqual(await fs.list!(join(cwd, "directory")), ["child"]);
   await assert.rejects(fs.inspect(join(cwd, "../outside")), /escape root|outside/);
   await assert.rejects(fs.list!(join(cwd, "../outside")), /escape root|outside/);

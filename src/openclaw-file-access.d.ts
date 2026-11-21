@@ -1,5 +1,5 @@
-// OpenClaw 2026.9.2 exports this runtime entry without declarations.
-// Its root export delegates directly to @openclaw/fs-safe 0.8.1.
+// The SDK exports this runtime entry without declarations. Use the same
+// root type that the pinned OpenClaw package re-exports at runtime.
 declare module "openclaw/plugin-sdk/file-access-runtime" {
   export { root } from "@openclaw/fs-safe/root";
 }

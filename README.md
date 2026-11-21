@@ -3,11 +3,11 @@
 Better Patch is an alternative to `apply_patch` for OpenClaw agents. It edits
 multiple files in one patch, rejects ambiguous edits instead of guessing, and
 preserves existing formatting. It checks the complete patch before writing,
-including edits that depend on earlier operations. Requires OpenClaw 2026.9.2+.
+including edits that depend on earlier operations. Requires OpenClaw 2026.11.6+.
 
 ## Installation
 
-Build and install from source with Node.js 22.22.3+:
+Build and install from source with Node.js 24.16.0 or later in the 24.x line, or Node.js 26.1.0+:
 
 ```sh
 git clone https://github.com/lastguru-net/openclaw-better-patch.git
@@ -161,7 +161,7 @@ Unchanged operations skip writes. Results report each named path's net change:
 
 Host and configured sandbox access respect OpenClaw's filesystem policy. Remote
 workers and workspace-only sandboxes with narrower roots or extra mount layouts
-are unsupported. Host writes replace leaf symlinks rather than their targets;
+are unsupported. Host writes reject leaf symlinks rather than replacing them or writing through them;
 files with multiple hardlinks are rejected by the host guards.
 
 ## License
