@@ -12,7 +12,7 @@ export function createBetterPatchTool(ctx: OpenClawPluginToolContext, resolveSan
   return {
     name: "better_patch",
     label: "Better Patch",
-    description: `Create, edit, move or delete files. Supply file operations directly, without \`*** Begin Patch\` / \`*** End Patch\` markers:
+    description: `Create, edit, move or delete files. Start with a file declaration. Each operation ends at the next declaration or the end of input:
 
 - \`*** Add File: path\`: create/overwrite from \`+text\` lines.
 - \`*** Delete File: path\`: delete.
